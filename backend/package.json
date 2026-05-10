@@ -1,0 +1,49 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "migrate": "ts-node src/db/migrate.ts",
+    "seed:prompts": "ts-node src/db/seeds/prompt-templates.ts",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bullmq": "^5.76.6",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.20.0",
+    "uuid": "^14.0.0",
+    "ws": "^8.20.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.6.2",
+    "@types/pg": "^8.20.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^6.0.3"
+  }
+}
