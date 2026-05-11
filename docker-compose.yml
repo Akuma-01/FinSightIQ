@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: finsightiq-postgres
+    environment:
+      POSTGRES_USER: finsight
+      POSTGRES_PASSWORD: finsight
+      POSTGRES_DB: finsightiq
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U finsight -d finsightiq" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: finsightiq-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: finsightiq-backend
+    ports:
+      - "4000:4000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://finsight:finsight@postgres:5432/finsightiq
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+volumes:
+  pgdata:
