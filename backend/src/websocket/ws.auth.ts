@@ -3,10 +3,9 @@ import { URL } from 'url';
 import { verifyAccessToken } from '../services/auth.service';
 import { AuthUser } from '../types/express';
 
-/**
- * Called synchronously during the WS upgrade request.
- * Throws on invalid/missing token — caller closes the socket.
- */
+
+// Called synchronously during the WS upgrade request.
+
 export function authenticateWSHandshake(req: IncomingMessage): AuthUser {
 	const url = new URL(req.url ?? '', `http://${req.headers.host}`);
 	const token = url.searchParams.get('token');

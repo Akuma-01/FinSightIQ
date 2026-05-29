@@ -25,7 +25,7 @@ export async function requireCollectionMember(
 			[collectionId, req.user.id]
 		);
 		if (result.rows.length === 0) {
-			return res.status(403.)
+			return res.status(403).json({ error: 'You are not a member of this collection' });
 		}
 	} catch (err) {
 		console.error('requireCollectionMember DB error:', err);

@@ -7,10 +7,6 @@ interface RateLimitConfig {
 	label: string; // shown in 429 error message
 }
 
-/**
- * Sliding window counter backed by Redis INCR + EXPIRE.
- * Key: rl:<group>:<userId>
- */
 function rateLimit(group: string, config: RateLimitConfig) {
 	return async (req: Request, res: Response, next: NextFunction) => {
 		if (!req.user) return next();
