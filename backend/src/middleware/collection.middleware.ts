@@ -1,5 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { db } from '../db/pool';
+import { logger } from '../lib/logger';
+import { AppError } from './error.middleware';
 
 /**
  * Reads collectionId from req.params.id or req.params.collectionId.
@@ -9,14 +11,14 @@ import { db } from '../db/pool';
 
 export async function requireCollectionMember(
 	req: Request,
-	res: Response,
+	_res: Response,
 	next: NextFunction
 ) {
-	if (!req.user) return res.status(401).json({ error: 'Unauthenticated' });
+	if (!req.user) throw new AppError(401, 'Unauthenticated');
 	if (req.user.role === 'admin') return next();
 
 	const collectionId = req.params.id ?? req.params.collectionId;
-	if (!collectionId) return res.status(400).json({ error: 'Missing collectionId' });
+	if (!collectionId) throw new AppError(400, 'Missing collectionId');
 
 	try {
 		const result = await db.query(
@@ -25,11 +27,12 @@ export async function requireCollectionMember(
 			[collectionId, req.user.id]
 		);
 		if (result.rows.length === 0) {
-			return res.status(403).json({ error: 'You are not a member of this collection' });
+			next(new AppError(403, 'You are not a member of this collection'));
+			return;
 		}
+		next();
 	} catch (err) {
-		console.error('requireCollectionMember DB error:', err);
-		res.status(500).json({ error: 'Internal error checking collection membership' });
+		logger.error({ err, collectionId, requestId: req.requestId, userId: req.user.id }, 'requireCollectionMember DB error');
+		next(err);
 	}
 }
-

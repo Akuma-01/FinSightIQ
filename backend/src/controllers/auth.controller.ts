@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { parse } from "path";
 import { z } from 'zod';
+import { AppError, asyncHandler } from '../middleware/error.middleware';
 import * as AuthService from '../services/auth.service';
 
 const COOKIE_OPTIONS = (days: number) => ({
@@ -22,64 +22,49 @@ const LoginSchema = z.object({
 	password: z.string().min(1),
 });
 
-export async function register(req: Request, res: Response) {
+export const register = asyncHandler(async (req: Request, res: Response) => {
 	const parsed = RegisterSchema.safeParse(req.body);
-	if (!parsed.success) return res.status(400).json({ error: z.flattenError(parsed.error) });
+	if (!parsed.success) throw parsed.error;
 
-	try {
-		const user = await AuthService.registerUser(
-			parsed.data.email,
-			parsed.data.password,
-			parsed.data.displayName,
-			parsed.data.role
-		);
-		res.status(201).json({ user });
-	} catch (e: any) {
-		const status = e.message === 'Email already registered' ? 409 : 500;
-		res.status(status).json({ error: e.message });
-	}
-}
+	const user = await AuthService.registerUser(
+		parsed.data.email,
+		parsed.data.password,
+		parsed.data.displayName,
+		parsed.data.role
+	);
+	res.status(201).json({ user });
+});
 
-export async function login(req: Request, res: Response) {
+export const login = asyncHandler(async (req: Request, res: Response) => {
 	const parsed = LoginSchema.safeParse(req.body);
-	if (!parsed.success) return res.status(400).json({ error: z.flattenError(parsed.error) });
+	if (!parsed.success) throw parsed.error;
 
-	try {
-		const days = parseInt(process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? '7', 10);
-		const { accessToken, refreshToken, user } = await AuthService.loginUser(
-			parsed.data.email,
-			parsed.data.password
-		);
-		res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS(days));
-		res.json({ accessToken, user });
+	const days = parseInt(process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? '7', 10);
+	const { accessToken, refreshToken, user } = await AuthService.loginUser(
+		parsed.data.email,
+		parsed.data.password
+	);
+	res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS(days));
+	res.json({ accessToken, user });
+});
 
-	} catch (e: any) {
-		res.status(401).json({ error: e.message });
-	}
-}
-
-export async function refresh(req: Request, res: Response) {
+export const refresh = asyncHandler(async (req: Request, res: Response) => {
 	const rawToken = req.cookies?.refreshToken;
-	if (!rawToken) return res.status(401).json({ error: 'No refresh token' });
+	if (!rawToken) throw new AppError(401, 'No refresh token');
 
-	try {
-		const days = parseInt(process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? '7', 10);
-		const { accessToken, refreshToken } = await AuthService.refreshAccessToken(rawToken);
-		res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS(days));
-		res.json({ accessToken });
-	} catch (e: any) {
-		res.clearCookie('refreshToken');
-		res.status(401).json({ error: e.message });
-	}
-}
+	const days = parseInt(process.env.REFRESH_TOKEN_EXPIRES_DAYS ?? '7', 10);
+	const { accessToken, refreshToken } = await AuthService.refreshAccessToken(rawToken);
+	res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS(days));
+	res.json({ accessToken });
+});
 
-export async function logout(req: Request, res: Response) {
+export const logout = asyncHandler(async (req: Request, res: Response) => {
 	const rawToken = req.cookies?.refreshToken;
-	if (rawToken) await AuthService.refreshAccessToken(rawToken).catch(() => { });
+	if (rawToken) await AuthService.revokeRefreshToken(rawToken);
 	res.clearCookie('refreshToken');
 	res.json({ message: 'Logged out' });
-}
+});
 
-export async function me(req: Request, res: Response) {
+export const me = asyncHandler(async (req: Request, res: Response) => {
 	res.json({ user: req.user });
-}
+});

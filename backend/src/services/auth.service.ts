@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { db } from '../db/pool';
+import { AppError } from '../middleware/error.middleware';
 import { AuthUser } from '../types/express';
 
 const BCRYPT_ROUNDS = 12;
@@ -17,10 +18,10 @@ export async function registerUser(
 	role: string
 ) {
 	if (!VALID_ROLES.includes(role as Role)) {
-		throw new Error(`Invalid role: ${role}`);
+		throw new AppError(400, `Invalid role: ${role}`);
 	}
 	const existing = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-	if (existing.rows.length > 0) throw new Error('Email already registered');
+	if (existing.rows.length > 0) throw new AppError(409, 'Email already registered');
 
 	const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 	const result = await db.query(
@@ -40,11 +41,11 @@ export async function loginUser(
 ) {
 	const result = await db.query('SELECT id, email, password_hash, role, display_name FROM users WHERE email = $1', [email]);
 
-	if (result.rows.length === 0) throw new Error('Invalid credentials');
+	if (result.rows.length === 0) throw new AppError(401, 'Invalid credentials');
 
 	const user = result.rows[0];
 	const valid = await bcrypt.compare(password, user.password_hash);
-	if (!valid) throw new Error('Invalid credentials');
+	if (!valid) throw new AppError(401, 'Invalid credentials');
 
 	const payload: AuthUser = { id: user.id, email: user.email, role: user.role };
 	const accessToken = signAccessToken(payload);
@@ -70,11 +71,11 @@ export async function refreshAccessToken(rawToken: string) {
 		WHERE rt.token_hash = $1`,
 		[tokenHash]
 	);
-	if (result.rows.length === 0) throw new Error('Invalid refresh token');
+	if (result.rows.length === 0) throw new AppError(401, 'Invalid refresh token');
 
 	const row = result.rows[0];
-	if (row.revoked) throw new Error('Refresh token revoked');
-	if (new Date(row.expires_at) < new Date()) throw new Error('Refresh token expired');
+	if (row.revoked) throw new AppError(401, 'Refresh token revoked');
+	if (new Date(row.expires_at) < new Date()) throw new AppError(401, 'Refresh token expired');
 
 	// Rotate: revoke old, issue new
 	await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE id = $1', [row.id]);

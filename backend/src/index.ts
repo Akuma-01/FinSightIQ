@@ -5,6 +5,9 @@ import express from 'express';
 import { createServer } from 'http';
 
 import { db } from './db/pool';
+import { logger } from './lib/logger';
+import { errorHandler, notFound } from './middleware/error.middleware';
+import { requestId } from './middleware/requestId.middleware';
 import { scheduleCleanupJob } from './queue/cleanup.queue';
 import { redis } from './redis/client';
 import authRoutes from './routes/auth.routes';
@@ -20,12 +23,15 @@ async function bootstrap() {
 		origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000',
 		credentials: true, // required for httpOnly refresh token cookie
 	}));
+	app.use(requestId);
 	app.use(express.json());
 	app.use(cookieParser());
 
 	// ── Routes ─────────────────────────────────────────────────────
 	app.use('/api/auth', authRoutes);
 	app.use(healthRoutes); // /health — no /api prefix intentional
+	app.use(notFound);
+	app.use(errorHandler);
 
 	// ── HTTP Server ─────────────────────────────────────────────────
 	const PORT = parseInt(process.env.PORT ?? '4000', 10);
@@ -40,13 +46,13 @@ async function bootstrap() {
 
 	// ── Listen ─────────────────────────────────────────────────────
 	httpServer.listen(PORT, () => {
-		console.info(`✓ FinSightIQ backend  →  http://localhost:${PORT}`);
-		console.info(`✓ WebSocket          →  ws://localhost:${PORT}/ws`);
+		logger.info({ port: PORT, url: `http://localhost:${PORT}` }, 'FinSightIQ backend started');
+		logger.info({ port: PORT, url: `ws://localhost:${PORT}/ws` }, 'WebSocket endpoint available');
 	});
 
 	// ── Graceful shutdown ──────────────────────────────────────────
 	const shutdown = async (signal: string) => {
-		console.info(`${signal} received — shutting down`);
+		logger.info({ signal }, 'Shutdown signal received');
 		httpServer.close();
 		await db.end();
 		await redis.quit();
@@ -58,6 +64,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-	console.error('Failed to start:', err);
+	logger.error({ err }, 'Failed to start');
 	process.exit(1);
 });

@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { AuthUser } from '../types/express';
+import { AppError } from './error.middleware';
 
 type Role = AuthUser['role'];
 
@@ -9,12 +10,14 @@ type Role = AuthUser['role'];
 */
 
 export function requireRole(...roles: Role[]) {
-	return (req: Request, res: Response, next: NextFunction) => {
-		if (!req.user) return res.status(401).json({ error: 'Unauthenticated' });
+	return (req: Request, _res: Response, next: NextFunction): void => {
+		if (!req.user) {
+			next(new AppError(401, 'Unauthenticated'));
+			return;
+		}
 		if (!roles.includes(req.user.role)) {
-			return res.status(403).json({
-				error: `Forbidden — required role(s): ${roles.join(', ')}. Your role: ${req.user.role}`,
-			});
+			next(new AppError(403, `Forbidden — required role(s): ${roles.join(', ')}. Your role: ${req.user.role}`));
+			return;
 		}
 		next();
 	};

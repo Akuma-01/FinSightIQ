@@ -1,4 +1,5 @@
 import { db } from '../pool';
+import { logger } from '../../lib/logger';
 
 const templates = [
 	{
@@ -139,10 +140,10 @@ async function seed() {
        ON CONFLICT (task, version) DO NOTHING`,
 			[t.task, t.version, t.body, t.description]
 		);
-		console.info(`✓ ${t.task} v${t.version}`);
+		logger.info({ task: t.task, version: t.version }, 'Prompt template seeded');
 	}
 	await db.end();
-	console.info('Prompt templates seeded.');
+	logger.info('Prompt templates seeded');
 }
 
-seed().catch((e) => { console.error(e); process.exit(1); });
+seed().catch((err) => { logger.error({ err }, 'Prompt template seed failed'); process.exit(1); });

@@ -1,5 +1,6 @@
 import { Worker } from 'bullmq';
 import { db } from '../db/pool';
+import { logger } from '../lib/logger';
 import { redis } from '../redis/client';
 
 let _status: 'active' | 'idle' = 'idle';
@@ -29,7 +30,7 @@ export function startCleanupWorker(): void {
             WHERE rn > 1000
           )
         `);
-				console.info(`✓ ws_events purge: ${result.rowCount ?? 0} rows deleted`);
+				logger.info({ rowCount: result.rowCount ?? 0 }, 'ws_events purge completed');
 			} finally {
 				_status = 'idle';
 			}
@@ -38,9 +39,9 @@ export function startCleanupWorker(): void {
 	);
 
 	worker.on('failed', (job, err) => {
-		console.error(`Cleanup worker failed [job=${job?.id}]:`, err.message);
+		logger.error({ err, jobId: job?.id }, 'Cleanup worker failed');
 		_status = 'idle';
 	});
 
-	console.info('✓ Cleanup worker started');
+	logger.info('Cleanup worker started');
 }

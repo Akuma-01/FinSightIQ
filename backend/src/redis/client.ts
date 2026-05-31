@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { logger } from '../lib/logger';
 
 const redisOptions = {
 	maxRetriesPerRequest: 3,
@@ -13,5 +14,5 @@ export const redisSub = new Redis(process.env.REDIS_URL!, redisOptions);
 redis.on('connect', () => console.log('Redis connected'));
 redisSub.on('connect', () => console.log('RedisSub connected'));
 
-redis.on('error', (err) => console.error('Redis error:', err));
-redisSub.on('error', (err) => console.error('Redis sub error:', err));
+redis.on('error', (err) => logger.error({ err }, 'Redis error'));
+redisSub.on('error', (err) => logger.error({ err }, 'Redis sub error'));

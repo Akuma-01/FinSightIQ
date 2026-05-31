@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import { Pool } from 'pg';
+import { logger } from '../lib/logger';
 
 dotenv.config({ path: "../.env" });
 
@@ -11,6 +12,6 @@ export const db = new Pool({
 });
 
 db.on('error', (err) => {
-	console.error('Unexpected pg pool error', err);
+	logger.error({ err }, 'Unexpected pg pool error');
 	process.exit(1);;
 });

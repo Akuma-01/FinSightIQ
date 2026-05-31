@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { logger } from '../lib/logger';
 import { redis } from '../redis/client';
 
 export const cleanupQueue = new Queue('cleanup-queue', {
@@ -26,5 +27,5 @@ export async function scheduleCleanupJob(): Promise<void> {
 		{},
 		{ repeat: { every: 60 * 60 * 1000 } } // every 1 hour
 	);
-	console.info('✓ Cleanup job scheduled (hourly)');
+	logger.info('Cleanup job scheduled (hourly)');
 }

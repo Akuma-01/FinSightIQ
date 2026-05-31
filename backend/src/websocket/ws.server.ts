@@ -1,5 +1,6 @@
 import { Server as HTTPServer } from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
+import { logger } from '../lib/logger';
 import { AuthUser } from '../types/express';
 import { authenticateWSHandshake } from './ws.auth';
 import { ClientAction } from './ws.events';
@@ -81,10 +82,10 @@ export function initWebSocketServer(httpServer: HTTPServer): WebSocketServer {
 		});
 
 		socket.on('error', (err) => {
-			console.error(`WS socket error [user=${user?.id}]:`, err.message);
+			logger.error({ err, userId: user?.id }, 'WS socket error');
 		});
 	});
 
-	console.info('✓ WebSocket server initialized on /ws');
+	logger.info({ path: '/ws' }, 'WebSocket server initialized');
 	return wss;
 }

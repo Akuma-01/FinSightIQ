@@ -1,10 +1,12 @@
 import { NextFunction, Request, Response } from 'express';
+import { AppError } from './error.middleware';
 import { verifyAccessToken } from '../services/auth.service';
 
-export function verifyJWT(req: Request, res: Response, next: NextFunction) {
+export function verifyJWT(req: Request, _res: Response, next: NextFunction): void {
 	const authHeader = req.headers.authorization;
 	if (!authHeader?.startsWith('Bearer ')) {
-		return res.status(401).json({ error: 'Missing or malformed Authorization header' });
+		next(new AppError(401, 'Missing or malformed Authorization header'));
+		return;
 	}
 
 	const token = authHeader.slice(7);
@@ -12,6 +14,6 @@ export function verifyJWT(req: Request, res: Response, next: NextFunction) {
 		req.user = verifyAccessToken(token);
 		next();
 	} catch {
-		res.status(401).json({ error: 'Invalid or expired token' });
+		next(new AppError(401, 'Invalid or expired token'));
 	}
 }
