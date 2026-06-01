@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { config } from '../config';
 import { AuthUser } from '../types/express';
 import { AppError } from './error.middleware';
 
@@ -11,13 +12,13 @@ type Role = AuthUser['role'];
 
 export function requireRole(...roles: Role[]) {
 	return (req: Request, _res: Response, next: NextFunction): void => {
-		if (!req.user) {
-			next(new AppError(401, 'Unauthenticated'));
-			return;
-		}
+		if (!req.user) return next(new AppError(401, 'Unauthenticated'));
+
 		if (!roles.includes(req.user.role)) {
-			next(new AppError(403, `Forbidden — required role(s): ${roles.join(', ')}. Your role: ${req.user.role}`));
-			return;
+			const message = config.NODE_ENV === 'development' ? `Forbidden — required: ${roles.join(', ')}, got: ${req.user.role}`
+				: 'Forbidden — insufficient permissions';
+
+			return next(new AppError(403, message));
 		}
 		next();
 	};

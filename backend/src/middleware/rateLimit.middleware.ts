@@ -1,10 +1,12 @@
 import { NextFunction, Request, Response } from 'express';
+import { logger } from '../lib/logger';
 import { redis } from '../redis/client';
+import { AppError } from './error.middleware';
 
 interface RateLimitConfig {
-	limit: number; // max requests in window
-	windowSeconds: number; // window size in seconds
-	label: string; // shown in 429 error message
+	limit: number;
+	windowSeconds: number;
+	label: string;
 }
 
 function rateLimit(group: string, config: RateLimitConfig) {
@@ -12,20 +14,27 @@ function rateLimit(group: string, config: RateLimitConfig) {
 		if (!req.user) return next();
 
 		const key = `rl:${group}:${req.user.id}`;
-		const count = await redis.incr(key);
 
-		// Set TTL on first request in this window
-		if (count === 1) await redis.expire(key, config.windowSeconds);
+		try {
+			const pipeline = redis.pipeline();
+			pipeline.incr(key);
+			pipeline.expire(key, config.windowSeconds, 'NX');
+			const results = await pipeline.exec();
 
-		res.setHeader('X-RateLimit-Limit', config.limit);
-		res.setHeader('X-RateLimit-Remaining', Math.max(0, config.limit - count));
+			const count = (results?.[0]?.[1] as number) ?? 1;
 
-		if (count > config.limit) {
-			const ttl = await redis.ttl(key);
-			return res.status(429).json({
-				error: `Rate limit exceeded: ${config.label}`,
-				retryAfter: ttl,
-			});
+			res.setHeader('X-RateLimit-Limit', config.limit);
+			res.setHeader('X-RateLimit-Remaining', Math.max(0, config.limit - count));
+
+			if (count > config.limit) {
+				const ttl = await redis.ttl(key);
+				res.setHeader('Retry-After', ttl);
+
+				return next(new AppError(429, `Rate limit exceeded: ${config.label}`));
+			}
+
+		} catch (err) {
+			logger.error({ err, key }, 'Rate limit Redis error - failing open');
 		}
 
 		next();

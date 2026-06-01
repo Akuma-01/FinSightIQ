@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { db } from '../db/pool';
+import { logger } from '../lib/logger';
 import { redis, redisSub } from '../redis/client';
 import { AuthUser } from '../types/express';
 import { WSEventType, WSMessage } from './ws.events';
@@ -133,10 +134,11 @@ export async function broadcastToRoom(
        VALUES ($1, $2, $3, $4)`,
 			[collectionId, seq, event, JSON.stringify(payload)]
 		);
-	} catch {
-		// Sequence may not exist if collection was just created in the same request —
-		// broadcast proceeds without persisting seq. This is safe; reconnect replay
-		// will simply not include this event.
+	} catch (err) {
+		logger.warn(
+			{ err, collectionId, event },
+			'ws_events sequence missing — broadcast will have seq=0 and skip replay'
+		);
 	}
 
 	const message = JSON.stringify({

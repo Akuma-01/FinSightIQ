@@ -2,7 +2,10 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
+import helmet from 'helmet';
 import { createServer } from 'http';
+import pinoHttp from 'pino-http';
+import { config } from './config';
 
 import { db } from './db/pool';
 import { logger } from './lib/logger';
@@ -15,47 +18,78 @@ import healthRoutes from './routes/health.routes';
 import { initWebSocketServer } from './websocket/ws.server';
 import { startCleanupWorker } from './workers/cleanup.worker';
 
+// ── Process-level safety net ────────────────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+	logger.fatal({ reason }, 'Unhandled promise rejection — shutting down');
+	process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+	logger.fatal({ err }, 'Uncaught exception — shutting down');
+	process.exit(1);
+});
+
 async function bootstrap() {
 	const app = express();
 
-	// ── Middleware ──────────────────────────────────────────────────
+
+	// ── Security ───────────────────────────────────────────────────
+	app.disable('x-powered-by');
+	app.use(helmet({
+		contentSecurityPolicy: false,
+	}));
+
+	// ── Request ID ──────────────────────────────────────────────────
+	app.use(requestId);
+
+	// ── HTTP request logging ───────────────────────────────────────
+	app.use(pinoHttp({
+		logger,
+		customProps: (_req, res) => ({ requestId: res.getHeader('X-Request-Id') }),
+		autoLogging: { ignore: (req) => req.url === '/health' },
+	}));
+
+	// ── Body parsing ──────────────────────────────────────────────
 	app.use(cors({
 		origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000',
-		credentials: true, // required for httpOnly refresh token cookie
+		credentials: true,
 	}));
-	app.use(requestId);
-	app.use(express.json());
+	app.use(express.json({ limit: '1mb' })); // reject bodies > 1MB
+	app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 	app.use(cookieParser());
 
-	// ── Routes ─────────────────────────────────────────────────────
+	// ── Routes ────────────────────────────────────────────────────
 	app.use('/api/auth', authRoutes);
-	app.use(healthRoutes); // /health — no /api prefix intentional
+	app.use(healthRoutes);
+
+	// ── 404 + Error handlers (must be LAST) ───────────────────────
 	app.use(notFound);
 	app.use(errorHandler);
 
-	// ── HTTP Server ─────────────────────────────────────────────────
-	const PORT = parseInt(process.env.PORT ?? '4000', 10);
+	// ── HTTP + WebSocket Server ───────────────────────────────────
 	const httpServer = createServer(app);
-
-	// ── WebSocket ──────────────────────────────────────────────────
 	initWebSocketServer(httpServer);
 
-	// ── Workers ────────────────────────────────────────────────────
+	// ── Workers ──────────────────────────────────────────────────
 	startCleanupWorker();
 	await scheduleCleanupJob();
 
-	// ── Listen ─────────────────────────────────────────────────────
-	httpServer.listen(PORT, () => {
-		logger.info({ port: PORT, url: `http://localhost:${PORT}` }, 'FinSightIQ backend started');
-		logger.info({ port: PORT, url: `ws://localhost:${PORT}/ws` }, 'WebSocket endpoint available');
+	// ── Listen ───────────────────────────────────────────────────
+	await new Promise<void>((resolve) => {
+		httpServer.listen(config.PORT, resolve);
 	});
 
-	// ── Graceful shutdown ──────────────────────────────────────────
+	logger.info(`✓ Backend  → http://localhost:${config.PORT}`);
+	logger.info(`✓ WS       → ws://localhost:${config.PORT}/ws`);
+
+	// ── Graceful shutdown ─────────────────────────────────────────
 	const shutdown = async (signal: string) => {
-		logger.info({ signal }, 'Shutdown signal received');
-		httpServer.close();
+		logger.info(`${signal} received — shutting down gracefully`);
+
+		await new Promise<void>((resolve) => httpServer.close(() => resolve()));
 		await db.end();
 		await redis.quit();
+		logger.info('Shutdown complete');
 		process.exit(0);
 	};
 
@@ -64,6 +98,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-	logger.error({ err }, 'Failed to start');
+	logger.fatal({ err }, 'Failed to start server');
 	process.exit(1);
 });

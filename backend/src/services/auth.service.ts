@@ -35,17 +35,20 @@ export async function registerUser(
 
 // ─── Login ───────────────────────────────────────────────────────────────────
 
+const DUMMY_HASH = '$2b$12$invalidhashpadding000000000000000000000000000000000000000';
+
 export async function loginUser(
 	email: string,
 	password: string,
 ) {
 	const result = await db.query('SELECT id, email, password_hash, role, display_name FROM users WHERE email = $1', [email]);
 
-	if (result.rows.length === 0) throw new AppError(401, 'Invalid credentials');
+	const user = result.rows[0] ?? null;
+	const hashToCompare = user?.password_hash ?? DUMMY_HASH;
 
-	const user = result.rows[0];
-	const valid = await bcrypt.compare(password, user.password_hash);
-	if (!valid) throw new AppError(401, 'Invalid credentials');
+	const valid = await bcrypt.compare(password, hashToCompare);
+
+	if (!user || !valid) throw new AppError(401, 'Invalid credentials');
 
 	const payload: AuthUser = { id: user.id, email: user.email, role: user.role };
 	const accessToken = signAccessToken(payload);
