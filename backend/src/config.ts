@@ -22,6 +22,18 @@ const EnvSchema = z.object({
 
 	// File storage
 	UPLOAD_DIR: z.string().default('./uploads'),
+	MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(25),
+
+	// EDGAR
+	EDGAR_USER_AGENT: z.string().default('FinSightIQ contact@example.com'),
+	EDGAR_CACHE_TTL_HOURS: z.coerce.number().int().min(1).default(24),
+
+	// Ingest worker
+	INGEST_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(3),
+	EMBEDDING_BATCH_SIZE: z.coerce.number().int().min(1).max(32).default(16),
+
+	// Section-aware chunking — LLM classify
+	SECTION_HEADER_CLASSIFY: z.enum(['regex', 'llm']).default('regex'),
 
 	// Embedding / LLM (optional in Phase 1 — will be required in Phase 2)
 	GROQ_API_KEY: z.string().optional(),
