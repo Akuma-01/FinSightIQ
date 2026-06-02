@@ -36,7 +36,7 @@ services:
     container_name: finsightiq-backend
     ports:
       - "4000:4000"
-    env_file: .env
+    env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql://finsight:finsight@postgres:5432/finsightiq
       REDIS_URL: redis://redis:6379

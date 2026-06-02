@@ -15,6 +15,7 @@ import { scheduleCleanupJob } from './queue/cleanup.queue';
 import { redis } from './redis/client';
 import authRoutes from './routes/auth.routes';
 import healthRoutes from './routes/health.routes';
+import testRoutes from './routes/test.routes';
 import { initWebSocketServer } from './websocket/ws.server';
 import { startCleanupWorker } from './workers/cleanup.worker';
 
@@ -60,6 +61,7 @@ async function bootstrap() {
 
 	// ── Routes ────────────────────────────────────────────────────
 	app.use('/api/auth', authRoutes);
+	app.use('/api', testRoutes);
 	app.use(healthRoutes);
 
 	// ── 404 + Error handlers (must be LAST) ───────────────────────

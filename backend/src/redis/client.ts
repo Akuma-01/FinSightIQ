@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 import { logger } from '../lib/logger';
 
 const redisOptions = {
-	maxRetriesPerRequest: 3,
+	maxRetriesPerRequest: null,
 	retryStrategy(times: number) {
 		return Math.min(times * 50, 2000);
 	},
