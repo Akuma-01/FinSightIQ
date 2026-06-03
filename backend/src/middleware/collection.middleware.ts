@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { AppError } from './error.middleware';
@@ -14,11 +15,19 @@ export async function requireCollectionMember(
 	_res: Response,
 	next: NextFunction
 ) {
-	if (!req.user) throw new AppError(401, 'Unauthenticated');
+	if (!req.user) {
+		next(new AppError(401, 'Unauthenticated'));
+		return;
+	}
 	if (req.user.role === 'admin') return next();
 
-	const collectionId = req.params.id ?? req.params.collectionId;
-	if (!collectionId) throw new AppError(400, 'Missing collectionId');
+	const collectionIdParam = req.params.id ?? req.params.collectionId;
+	const parsedCollectionId = z.string().uuid().safeParse(collectionIdParam);
+	if (!parsedCollectionId.success) {
+		next(new AppError(400, 'Invalid collectionId'));
+		return;
+	}
+	const collectionId = parsedCollectionId.data;
 
 	try {
 		const result = await db.query(
