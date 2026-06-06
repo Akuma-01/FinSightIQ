@@ -3,6 +3,8 @@ import { db } from '../db/pool';
 import { redis } from '../redis/client';
 import { getWsConnectionCount } from '../websocket/ws.server';
 import { getCleanupWorkerStatus } from '../workers/cleanup.worker';
+import { getEdgarWorkerStatus } from '../workers/edgar.worker';
+import { getIngestWorkerStatus } from '../workers/ingest.worker';
 
 const router = Router();
 
@@ -28,6 +30,8 @@ router.get('/health', async (_req: Request, res: Response) => {
 		db: dbStatus,
 		redis: redisStatus,
 		cleanup_worker: getCleanupWorkerStatus(),
+		ingest_worker: getIngestWorkerStatus(),
+		edgar_worker: getEdgarWorkerStatus(),
 		ws_connections: getWsConnectionCount(),
 	});
 });
