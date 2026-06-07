@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { ChunkResult, chunkFixed } from './fixed.chunker';
+import { ChunkResult } from './fixed.chunker';
 import { chunkSentence } from './sentence.chunker';
 
 const MAX_SECTION_TOKENS = 600;

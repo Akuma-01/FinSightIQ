@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createWriteStream, mkdirSync, unlinkSync } from 'fs';
-import { extname, join } from 'path';
+import { join } from 'path';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 
@@ -28,7 +28,6 @@ export async function saveFile(
 	mimeType: string
 ): Promise<StoredFile> {
 	const fileId = randomUUID();
-	const ext = extname(originalName) || '';
 	const subdir = join(config.UPLOAD_DIR, fileId);
 	const absPath = join(subdir, originalName);
 

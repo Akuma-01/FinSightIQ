@@ -21,7 +21,6 @@ export function initRedisSub(): void {
 	});
 }
 
-/** Join a room. Performs membership check for non-admins. */
 export async function joinRoom(
 	socket: WebSocket,
 	user: AuthUser,

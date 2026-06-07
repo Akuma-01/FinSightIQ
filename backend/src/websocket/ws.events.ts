@@ -17,12 +17,11 @@ export type WSEventType =
 
 export interface WSMessage {
 	event: WSEventType;
-	seq?: number;   // set by server on broadcast; absent on client→server messages
-	timestamp: string;   // ISO 8601
+	seq?: number;
+	timestamp: string;
 	payload: unknown;
 }
 
-// Client → Server action union
 export type ClientAction =
 	| { action: 'join'; collectionId: string; lastSeq?: number }
 	| { action: 'leave'; collectionId: string }

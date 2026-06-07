@@ -21,7 +21,6 @@ export function get(collectionId: string): PresenceEntry[] {
 	return Array.from(rooms.get(collectionId)?.values() ?? []);
 }
 
-/** Removes user from all rooms; returns list of affected collectionIds */
 export function removeFromAll(userId: string): string[] {
 	const affected: string[] = [];
 	for (const [collectionId, members] of rooms) {
