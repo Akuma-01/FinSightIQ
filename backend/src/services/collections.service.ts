@@ -3,7 +3,7 @@ import { logger } from '../lib/logger';
 import { AppError } from '../middleware/error.middleware';
 import { AuthUser } from '../types/express';
 
-// ─── Sequence helpers ─────────────────────────────────────────────────────────
+// ─── Sequence helpers ────────────────────────────────────────────────────────
 
 function seqName(collectionId: string): string {
 	return `ws_seq_${collectionId.replace(/-/g, '_')}`;
@@ -17,7 +17,7 @@ export async function dropCollectionSequence(collectionId: string): Promise<void
 	await db.query(`DROP SEQUENCE IF EXISTS "${seqName(collectionId)}"`);
 }
 
-// ─── CRUD ─────────────────────────────────────────────────────────────────────
+// ─── CRUD ────────────────────────────────────────────────────────────────────
 
 export async function createCollection(
 	name: string,

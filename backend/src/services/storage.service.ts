@@ -4,24 +4,14 @@ import { join } from 'path';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 
-// ─── Interface ───────────────────────────────────────────────────────────────
-// Swap implementations here only when migrating to R2 in Phase 5.
-// Nothing outside this file should know whether storage is local or remote.
-
 export interface StoredFile {
-	storageKey: string;  // opaque key — local: relative path; R2: object key
-	localPath: string;  // absolute path for local access (null in R2 mode)
+	storageKey: string;
+	localPath: string;
 	originalName: string;
 	mimeType: string;
 	sizeBytes: number;
 }
 
-// ─── Local disk adapter ───────────────────────────────────────────────────────
-
-/**
- * Saves a multer file to UPLOAD_DIR/<uuid>/<originalname>.
- * Returns a StoredFile with the storageKey (path relative to UPLOAD_DIR).
- */
 export async function saveFile(
 	buffer: Buffer,
 	originalName: string,
@@ -35,11 +25,11 @@ export async function saveFile(
 
 	await new Promise<void>((resolve, reject) => {
 		const ws = createWriteStream(absPath);
-		ws.write(buffer, (err) => {
-			if (err) return reject(err);
-			ws.end(resolve);
-		});
-		ws.on('error', reject);
+
+		ws.once('error', reject);
+		ws.once('finish', resolve);
+
+		ws.end(buffer);
 	});
 
 	const storageKey = `${fileId}/${originalName}`;
@@ -62,7 +52,6 @@ export function deleteFile(storageKey: string): void {
 	try {
 		unlinkSync(join(config.UPLOAD_DIR, storageKey));
 	} catch (err) {
-		// Log but don't throw — file may already be gone
 		logger.warn({ err, storageKey }, 'Failed to delete file from local disk');
 	}
 }

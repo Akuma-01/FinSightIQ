@@ -56,5 +56,3 @@ When the backend is running, health is available at:
 ```bash
 curl http://localhost:4000/health
 ```
-
-See `FinSightIQ_SRS.md` for the full product requirements and `RESEARCH.md` for the evaluation methodology.
