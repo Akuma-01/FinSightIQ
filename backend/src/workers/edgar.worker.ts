@@ -18,7 +18,6 @@ const EDGAR_HEADERS = {
 
 /** Resolve ticker → CIK via SEC company search */
 async function resolveCIK(ticker: string): Promise<string> {
-	const url = `https://efts.sec.gov/LATEST/search-index?q="${ticker}"&dateRange=custom&startdt=2020-01-01&forms=${encodeURIComponent('10-K,10-Q')}`;
 	const { data } = await axios.get(
 		`https://www.sec.gov/cgi-bin/browse-edgar?company=&CIK=${ticker}&type=10-K&dateb=&owner=include&count=1&search_text=&action=getcompany&output=atom`,
 		{ headers: EDGAR_HEADERS }
@@ -91,8 +90,8 @@ async function processEdgarJob(job: Job<EdgarJobData>): Promise<void> {
 	// Check 24-hour cache
 	const cached = await redis.get(cacheKey);
 	if (cached) {
-		log.info('EDGAR result served from cache');
-		const { documentId } = JSON.parse(cached);
+		const { documentId } = JSON.parse(cached) as { documentId: string };
+		log.info({ documentId }, 'EDGAR result served from cache');
 		return; // document was already ingested from a previous fetch
 	}
 

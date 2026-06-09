@@ -5,7 +5,6 @@ const OVERLAP_TOKENS = 50;
 
 function estimateTokens(t: string) { return Math.ceil(t.length / 4); }
 
-/** Split on sentence-ending punctuation, keeping delimiter with sentence */
 function splitSentences(text: string): string[] {
 	return text
 		.split(/(?<=[.!?])\s+/)

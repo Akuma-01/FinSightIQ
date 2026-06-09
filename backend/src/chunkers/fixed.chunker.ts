@@ -5,7 +5,6 @@ export interface ChunkResult {
 	chunkingStrategy: string;
 }
 
-/** Naïve token estimator: ~4 chars per token (good enough for chunking decisions) */
 function estimateTokens(text: string): number {
 	return Math.ceil(text.length / 4);
 }
@@ -33,7 +32,7 @@ export function chunkFixed(text: string, targetTokens: 256 | 512): ChunkResult[]
 	// Flush remainder
 	if (current.length > 0) {
 		const chunkText = current.join(' ').trim();
-		if (chunkText.length > 20) { // skip very short trailing fragments
+		if (chunkText.length > 20) {
 			chunks.push({
 				text: chunkText,
 				chunkIndex: chunkIndex++,

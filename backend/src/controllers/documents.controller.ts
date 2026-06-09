@@ -6,7 +6,7 @@ import { upload } from '../middleware/upload.middleware';
 import * as DocumentsService from '../services/documents.service';
 
 function getUuidParam(req: Request, name: string): string {
-	const parsed = z.string().uuid().safeParse(req.params[name]);
+	const parsed = z.uuid().safeParse(req.params[name]);
 	if (!parsed.success) throw new AppError(400, `Invalid ${name}`);
 	return parsed.data;
 }
