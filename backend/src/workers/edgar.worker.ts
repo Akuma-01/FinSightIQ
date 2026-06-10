@@ -15,12 +15,37 @@ const EDGAR_HEADERS = {
 	'User-Agent': config.EDGAR_USER_AGENT,
 	'Accept': 'application/json',
 };
+const EDGAR_WWW_HOSTNAME = 'www.sec.gov';
+const EDGAR_DATA_HOSTNAME = 'data.sec.gov';
+
+function assertEdgarUrl(url: string, allowedHostname: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new Error(`EDGAR: invalid URL: ${url}`);
+	}
+
+	if (parsed.protocol !== 'https:' || parsed.hostname !== allowedHostname) {
+		throw new Error(`EDGAR SSRF guard: expected ${allowedHostname}, got: ${url}`);
+	}
+
+	return url;
+}
 
 /** Resolve ticker → CIK via SEC company search */
 async function resolveCIK(ticker: string): Promise<string> {
+	if (!/^[A-Z0-9]{1,10}$/.test(ticker)) {
+		throw new Error(`Invalid ticker format: ${ticker}`);
+	}
+
+	const url = assertEdgarUrl(
+		`https://www.sec.gov/cgi-bin/browse-edgar?company=&CIK=${encodeURIComponent(ticker)}&type=10-K&dateb=&owner=include&count=1&search_text=&action=getcompany&output=atom`,
+		EDGAR_WWW_HOSTNAME
+	);
 	const { data } = await axios.get(
-		`https://www.sec.gov/cgi-bin/browse-edgar?company=&CIK=${ticker}&type=10-K&dateb=&owner=include&count=1&search_text=&action=getcompany&output=atom`,
-		{ headers: EDGAR_HEADERS }
+		url,
+		{ headers: EDGAR_HEADERS, timeout: 15_000 }
 	);
 	// Parse CIK from atom feed — look for <cik-number> element
 	const match = data.match(/<cik-number>(\d+)<\/cik-number>/);
@@ -34,9 +59,10 @@ async function getFilingAccession(
 	filingType: string,
 	year: number
 ): Promise<{ accessionNumber: string; filingDate: string } | null> {
+	const url = assertEdgarUrl(`https://data.sec.gov/submissions/CIK${cik}.json`, EDGAR_DATA_HOSTNAME);
 	const { data } = await axios.get(
-		`https://data.sec.gov/submissions/CIK${cik}.json`,
-		{ headers: EDGAR_HEADERS }
+		url,
+		{ headers: EDGAR_HEADERS, timeout: 20_000 }
 	);
 
 	const filings = data.filings?.recent;
@@ -59,19 +85,32 @@ async function getFilingAccession(
 /** Download the primary document text from a filing */
 async function downloadFilingText(cik: string, accessionNumber: string): Promise<string> {
 	const accDashed = accessionNumber.replace(/-/g, '');
-	const indexUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/` +
-		`${accDashed}/${accessionNumber}-index.htm`;
+	const cikNum = parseInt(cik, 10);
+	const indexUrl = assertEdgarUrl(
+		`https://www.sec.gov/Archives/edgar/data/${cikNum}/${accDashed}/${accessionNumber}-index.htm`,
+		EDGAR_WWW_HOSTNAME
+	);
 
 	// Fetch the index to find the primary document filename
-	const { data: indexHtml } = await axios.get(indexUrl, { headers: EDGAR_HEADERS });
+	const { data: indexHtml } = await axios.get(indexUrl, {
+		headers: { ...EDGAR_HEADERS, Accept: 'text/html' },
+		timeout: 20_000,
+	});
 
 	// Look for the primary document (first .htm file linked)
 	const primaryMatch = indexHtml.match(/href="([^"]+\.htm)"/i);
 	if (!primaryMatch) throw new Error('Could not find primary document in filing index');
 
-	const primaryUrl = `https://www.sec.gov${primaryMatch[1].startsWith('/') ? '' : '/Archives/edgar/data/' + parseInt(cik) + '/' + accDashed + '/'}${primaryMatch[1]}`;
+	const href = primaryMatch[1];
+	const primaryUrl = assertEdgarUrl(
+		href.startsWith('/')
+			? `https://www.sec.gov${href}`
+			: `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accDashed}/${href}`,
+		EDGAR_WWW_HOSTNAME
+	);
 	const { data: htmlText } = await axios.get(primaryUrl, {
 		headers: { ...EDGAR_HEADERS, Accept: 'text/html' },
+		timeout: 30_000,
 	});
 
 	// Strip HTML tags for plain text extraction
@@ -144,7 +183,6 @@ async function processEdgarJob(job: Job<EdgarJobData>): Promise<void> {
 		collectionId,
 		jobId,
 		storageKey: stored.storageKey,
-		localPath: stored.localPath,
 		chunkingStrategy: colResult.rows[0].chunking_strategy,
 	});
 

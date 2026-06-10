@@ -3,7 +3,7 @@ import { config } from '../config';
 import { logger } from '../lib/logger';
 import { AppError } from '../middleware/error.middleware';
 
-const BATCH_SIZE = config.EMBEDDING_BATCH_SIZE; // default 16
+const BATCH_SIZE = config.EMBEDDING_BATCH_SIZE;
 
 // ─── Provider adapters ────────────────────────────────────────────────────
 
@@ -11,7 +11,10 @@ async function embedWithGroq(texts: string[]): Promise<number[][]> {
 	const response = await axios.post(
 		'https://api.groq.com/openai/v1/embeddings',
 		{ model: 'nomic-embed-text', input: texts },
-		{ headers: { Authorization: `Bearer ${config.GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
+		{
+			headers: { Authorization: `Bearer ${config.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+			timeout: 30_000,
+		}
 	);
 	return (response.data.data as { embedding: number[] }[]).map(d => d.embedding);
 }
@@ -20,7 +23,10 @@ async function embedWithHuggingFace(texts: string[]): Promise<number[][]> {
 	const response = await axios.post(
 		'https://api-inference.huggingface.co/models/nomic-ai/nomic-embed-text-v1',
 		{ inputs: texts },
-		{ headers: { Authorization: `Bearer ${config.HUGGINGFACE_API_KEY}` } }
+		{
+			headers: { Authorization: `Bearer ${config.HUGGINGFACE_API_KEY}` },
+			timeout: 60_000,
+		}
 	);
 	return response.data as number[][];
 }
@@ -31,7 +37,7 @@ async function embedWithOllama(texts: string[]): Promise<number[][]> {
 		const response = await axios.post(`${config.OLLAMA_BASE_URL}/api/embeddings`, {
 			model: 'nomic-embed-text',
 			prompt: text,
-		});
+		}, { timeout: 120_000 });
 		vectors.push(response.data.embedding);
 	}
 	return vectors;
@@ -46,6 +52,10 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
 			case 'groq': return await embedWithGroq(texts);
 			case 'huggingface': return await embedWithHuggingFace(texts);
 			case 'ollama': return await embedWithOllama(texts);
+			default: {
+				const _exhaustive: never = provider;
+				throw new Error(`Unknown embedding provider: ${_exhaustive}`);
+			}
 		}
 	} catch (err) {
 		if (provider === 'groq' && config.HUGGINGFACE_API_KEY) {

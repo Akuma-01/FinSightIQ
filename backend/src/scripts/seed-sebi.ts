@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { config } from '../config';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { ingestQueue } from '../queue/ingest.queue';
@@ -17,6 +18,19 @@ const SEBI_INDEX_URL =
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
+function assertHttpsUrl(url: string, context: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new Error(`${context}: invalid URL: ${url}`);
+	}
+	if (parsed.protocol !== 'https:') {
+		throw new Error(`${context}: only HTTPS URLs are allowed, got: ${url}`);
+	}
+	return url;
+}
+
 async function main() {
 	logger.info({ dryRun: DRY_RUN, maxPages: MAX_PAGES }, 'seed-sebi starting');
 
@@ -30,11 +44,11 @@ async function main() {
 	let enqueued = 0;
 
 	for (let page = 1; page <= MAX_PAGES; page++) {
-		const url = SEBI_INDEX_URL + page;
+		const url = assertHttpsUrl(SEBI_INDEX_URL + page, `SEBI index page ${page}`);
 		logger.info({ page, url }, 'Fetching SEBI index page');
 
 		const { data: html } = await axios.get(url, {
-			headers: { 'User-Agent': 'FinSightIQ research/1.0 contact@example.com' },
+			headers: { 'User-Agent': config.EDGAR_USER_AGENT },
 			timeout: 15_000,
 		});
 
@@ -57,9 +71,10 @@ async function main() {
 		logger.info({ page, rowCount: rows.length }, 'Parsed circular rows');
 
 		for (const row of rows) {
-			const pdfUrl = row.href.startsWith('http')
+			const rawUrl = row.href.startsWith('http')
 				? row.href
 				: `https://www.sebi.gov.in${row.href}`;
+			const pdfUrl = assertHttpsUrl(rawUrl, `SEBI circular ${row.number}`);
 
 			if (DRY_RUN) {
 				logger.info({ number: row.number, date: row.date, pdfUrl }, '[DRY RUN] would download + enqueue');
@@ -70,7 +85,7 @@ async function main() {
 				logger.debug({ pdfUrl }, 'Downloading SEBI circular PDF');
 				const { data: pdfBuffer } = await axios.get(pdfUrl, {
 					responseType: 'arraybuffer',
-					headers: { 'User-Agent': 'FinSightIQ research/1.0 contact@example.com' },
+					headers: { 'User-Agent': config.EDGAR_USER_AGENT },
 					timeout: 30_000,
 				});
 
@@ -101,7 +116,6 @@ async function main() {
 					collectionId: COLLECTION_ID,
 					jobId: jobRow.rows[0].id,
 					storageKey: stored.storageKey,
-					localPath: stored.localPath,
 					chunkingStrategy: strategy,
 				});
 

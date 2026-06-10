@@ -1,5 +1,5 @@
 import { Job, Worker } from 'bullmq';
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { PDFParse } from 'pdf-parse';
 import { chunk, ChunkingStrategy } from '../chunkers/chunker.factory';
 import { config } from '../config';
@@ -8,13 +8,14 @@ import { logger } from '../lib/logger';
 import { IngestJobData } from '../queue/ingest.queue';
 import { redis } from '../redis/client';
 import { embedTexts } from '../services/embedding.service';
+import { getAbsolutePath } from '../services/storage.service';
 import { broadcastToRoom } from '../websocket/ws.rooms';
 
 let workerStatus: 'active' | 'idle' = 'idle';
 export const getIngestWorkerStatus = () => workerStatus;
 
 async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
-	const { documentId, collectionId, jobId, localPath, chunkingStrategy } = job.data;
+	const { documentId, collectionId, jobId, chunkingStrategy } = job.data;
 	const log = logger.child({ documentId, collectionId, jobId });
 
 	await db.query(
@@ -25,7 +26,8 @@ async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
 	);
 
 	log.info('Reading file from disk');
-	const fileBuffer = readFileSync(localPath);
+	const resolvedPath = getAbsolutePath(job.data.storageKey);
+	const fileBuffer = await readFile(resolvedPath);
 
 	let rawText = '';
 	const mimeResult = await db.query('SELECT mime_type FROM documents WHERE id = $1', [documentId]);
@@ -36,6 +38,15 @@ async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
 		try {
 			const parsed = await parser.getText();
 			rawText = parsed.text;
+		} catch (parseErr) {
+			log.warn({ parseErr }, 'pdf-parse threw - likely corrupt or non-PDF content');
+			await markFailed(jobId, documentId, 'pdf_parse_error');
+			await broadcastToRoom(collectionId, 'document:failed', {
+				documentId,
+				filename: job.data.storageKey.split('/').pop(),
+				failureReason: 'pdf_parse_error',
+			});
+			return;
 		} finally {
 			await parser.destroy();
 		}
@@ -78,9 +89,8 @@ async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
 			await client.query(
 				`INSERT INTO chunks
            (document_id, collection_id, chunk_index, chunk_text, embedding,
-            chunk_text_tsv, chunking_strategy, token_count)
-         VALUES ($1, $2, $3, $4, $5::vector,
-                 to_tsvector('english', $4), $6, $7)`,
+            chunking_strategy, token_count)
+         VALUES ($1, $2, $3, $4, $5::vector, $6, $7)`,
 				[documentId, collectionId, c.chunkIndex, c.text, vectorStr,
 					c.chunkingStrategy, c.tokenCount]
 			);

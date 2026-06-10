@@ -25,7 +25,12 @@ const EnvSchema = z.object({
 	MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(25),
 
 	// EDGAR
-	EDGAR_USER_AGENT: z.string().default('FinSightIQ contact@example.com'),
+	EDGAR_USER_AGENT: z.string()
+		.min(10, 'EDGAR_USER_AGENT must include app name and real contact email per EDGAR ToS')
+		.refine(
+			(v) => v.includes('@') && !v.includes('@example.com'),
+			{ message: 'EDGAR_USER_AGENT must contain a real contact email, not @example.com' }
+		),
 	EDGAR_CACHE_TTL_HOURS: z.coerce.number().int().min(1).default(24),
 
 	// Ingest worker

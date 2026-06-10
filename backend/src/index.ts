@@ -14,10 +14,14 @@ import { requestId } from './middleware/requestId.middleware';
 import { scheduleCleanupJob } from './queue/cleanup.queue';
 import { redis } from './redis/client';
 import authRoutes from './routes/auth.routes';
+import collectionsRoutes from './routes/collections.routes';
+import edgarRoutes from './routes/edgar.routes';
 import healthRoutes from './routes/health.routes';
 import testRoutes from './routes/test.routes';
 import { initWebSocketServer } from './websocket/ws.server';
 import { startCleanupWorker } from './workers/cleanup.worker';
+import { startEdgarWorker } from './workers/edgar.worker';
+import { startIngestWorker } from './workers/ingest.worker';
 
 // ── Process-level safety net ────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
@@ -61,6 +65,8 @@ async function bootstrap() {
 
 	// ── Routes ────────────────────────────────────────────────────
 	app.use('/api/auth', authRoutes);
+	app.use('/api/collections', collectionsRoutes);
+	app.use('/api/edgar', edgarRoutes);
 	app.use('/api', testRoutes);
 	app.use(healthRoutes);
 
@@ -74,6 +80,8 @@ async function bootstrap() {
 
 	// ── Workers ──────────────────────────────────────────────────
 	startCleanupWorker();
+	startIngestWorker();
+	startEdgarWorker();
 	await scheduleCleanupJob();
 
 	// ── Listen ───────────────────────────────────────────────────

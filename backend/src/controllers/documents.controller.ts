@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppError, asyncHandler } from '../middleware/error.middleware';
 import { uploadRateLimit } from '../middleware/rateLimit.middleware';
-import { upload } from '../middleware/upload.middleware';
+import { upload, verifyFileIntegrity } from '../middleware/upload.middleware';
 import * as DocumentsService from '../services/documents.service';
 
 function getUuidParam(req: Request, name: string): string {
@@ -22,6 +22,7 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 export const uploadOne = [
 	uploadRateLimit,
 	upload.single('file'),
+	verifyFileIntegrity,
 	asyncHandler(async (req: Request, res: Response) => {
 		if (!req.file) throw new AppError(400, 'No file uploaded');
 

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { PDFParse } from 'pdf-parse';
+import { config } from '../config';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { ingestQueue } from '../queue/ingest.queue';
@@ -16,6 +17,19 @@ const SCANNED_THRESHOLD = 200;
 const RBI_INDEX_URL = 'https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx';
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+function assertHttpsUrl(url: string, context: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		throw new Error(`${context}: invalid URL: ${url}`);
+	}
+	if (parsed.protocol !== 'https:') {
+		throw new Error(`${context}: only HTTPS URLs are allowed, got: ${url}`);
+	}
+	return url;
+}
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
 	const parser = new PDFParse({ data: buffer });
@@ -37,8 +51,8 @@ async function main() {
 	if (!colResult.rows[0]) throw new Error('Collection not found');
 	const strategy = colResult.rows[0].chunking_strategy;
 
-	const { data: html } = await axios.get(RBI_INDEX_URL, {
-		headers: { 'User-Agent': 'FinSightIQ research/1.0 contact@example.com' },
+	const { data: html } = await axios.get(assertHttpsUrl(RBI_INDEX_URL, 'RBI index'), {
+		headers: { 'User-Agent': config.EDGAR_USER_AGENT },
 		timeout: 20_000,
 	});
 
@@ -61,9 +75,10 @@ async function main() {
 	let skippedScanned = 0;
 
 	for (const row of rows) {
-		const pdfUrl = row.href.startsWith('http')
+		const rawUrl = row.href.startsWith('http')
 			? row.href
 			: `https://www.rbi.org.in${row.href}`;
+		const pdfUrl = assertHttpsUrl(rawUrl, `RBI direction ${row.name}`);
 
 		if (DRY_RUN) {
 			logger.info({ name: row.name, pdfUrl }, '[DRY RUN] would process');
@@ -73,7 +88,7 @@ async function main() {
 		try {
 			const { data: pdfBuffer } = await axios.get(pdfUrl, {
 				responseType: 'arraybuffer',
-				headers: { 'User-Agent': 'FinSightIQ research/1.0 contact@example.com' },
+				headers: { 'User-Agent': config.EDGAR_USER_AGENT },
 				timeout: 30_000,
 			});
 
@@ -127,7 +142,6 @@ async function main() {
 				collectionId: COLLECTION_ID,
 				jobId: jobRow.rows[0].id,
 				storageKey: stored.storageKey,
-				localPath: stored.localPath,
 				chunkingStrategy: strategy,
 			});
 

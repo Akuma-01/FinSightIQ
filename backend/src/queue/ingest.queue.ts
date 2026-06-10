@@ -6,7 +6,6 @@ export interface IngestJobData {
 	collectionId: string;
 	jobId: string;
 	storageKey: string;
-	localPath: string;
 	chunkingStrategy: 'fixed_256' | 'fixed_512' | 'sentence' | 'section_aware';
 }
 

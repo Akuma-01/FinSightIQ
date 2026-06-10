@@ -9,9 +9,9 @@
     "start": "node dist/index.js",
     "migrate": "ts-node -r dotenv/config src/db/migrate.ts",
     "seed:prompts": "ts-node -r dotenv/config src/db/seeds/prompt-templates.ts",
-    "seed:edgar": "ts-node src/scripts/seed-edgar.ts",
-    "seed:sebi": "ts-node src/scripts/seed-sebi.ts",
-    "seed:rbi": "ts-node src/scripts/seed-rbi.ts",
+    "seed:edgar": "ts-node -r dotenv/config src/scripts/seed-edgar.ts",
+    "seed:sebi": "ts-node -r dotenv/config src/scripts/seed-sebi.ts",
+    "seed:rbi": "ts-node -r dotenv/config src/scripts/seed-rbi.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""
   },

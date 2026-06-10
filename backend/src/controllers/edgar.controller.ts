@@ -5,7 +5,10 @@ import { edgarRateLimit } from '../middleware/rateLimit.middleware';
 import { edgarQueue } from '../queue/edgar.queue';
 
 const EdgarSchema = z.object({
-	ticker: z.string().min(1).max(10).toUpperCase(),
+	ticker: z.string().min(1).max(10).toUpperCase().refine(
+		(t) => /^[A-Z0-9]{1,10}$/.test(t),
+		{ message: 'Ticker must be 1-10 uppercase alphanumeric characters' }
+	),
 	filingType: z.enum(['10-K', '10-Q', '8-K']).default('10-K'),
 	year: z.coerce.number().int().min(1993).max(new Date().getFullYear()),
 	collectionId: z.string().uuid(),

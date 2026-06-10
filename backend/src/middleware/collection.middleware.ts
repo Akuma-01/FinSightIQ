@@ -22,7 +22,7 @@ export async function requireCollectionMember(
 	if (req.user.role === 'admin') return next();
 
 	const collectionIdParam = req.params.id ?? req.params.collectionId;
-	const parsedCollectionId = z.string().uuid().safeParse(collectionIdParam);
+	const parsedCollectionId = z.uuid().safeParse(collectionIdParam);
 	if (!parsedCollectionId.success) {
 		next(new AppError(400, 'Invalid collectionId'));
 		return;

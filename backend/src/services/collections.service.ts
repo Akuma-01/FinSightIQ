@@ -100,6 +100,20 @@ export async function updateCollection(id: string, patch: { name?: string; archi
 	const values: unknown[] = [];
 	let i = 1;
 
+	if (patch.archived !== undefined) {
+		const { rows: current } = await db.query(
+			'SELECT archived FROM collections WHERE id = $1',
+			[id]
+		);
+		if (!current[0]) throw new AppError(404, 'Collection not found');
+		if (current[0].archived === patch.archived) {
+			throw new AppError(
+				409,
+				patch.archived ? 'Collection is already archived' : 'Collection is already active'
+			);
+		}
+	}
+
 	if (patch.name !== undefined) { fields.push(`name = $${i++}`); values.push(patch.name); }
 	if (patch.archived !== undefined) { fields.push(`archived = $${i++}`); values.push(patch.archived); }
 	if (!fields.length) throw new AppError(400, 'No fields to update');
@@ -135,17 +149,23 @@ export async function deleteCollection(id: string) {
 
 export async function listMembers(collectionId: string) {
 	const { rows } = await db.query(
-		`SELECT u.id, u.email, u.display_name, u.role, cm.access_role, cm.created_at AS added_at
+		`SELECT u.id, u.email, u.display_name, u.role, cm.access_role, cm.added_at
      FROM collection_members cm
      JOIN users u ON u.id = cm.user_id
      WHERE cm.collection_id = $1
-     ORDER BY cm.created_at`,
+     ORDER BY cm.added_at`,
 		[collectionId]
 	);
 	return rows;
 }
 
 export async function addMember(collectionId: string, userId: string, accessRole: string) {
+	const { rows: userRows } = await db.query(
+		'SELECT id FROM users WHERE id = $1',
+		[userId]
+	);
+	if (!userRows[0]) throw new AppError(404, `User ${userId} not found`);
+
 	const { rows } = await db.query(
 		`INSERT INTO collection_members (collection_id, user_id, access_role)
      VALUES ($1, $2, $3)
@@ -157,6 +177,30 @@ export async function addMember(collectionId: string, userId: string, accessRole
 }
 
 export async function removeMember(collectionId: string, userId: string) {
+	const { rows: targetRows } = await db.query(
+		`SELECT access_role FROM collection_members
+     WHERE collection_id = $1 AND user_id = $2`,
+		[collectionId, userId]
+	);
+	if (!targetRows[0]) throw new AppError(404, 'Member not found in this collection');
+
+	const isOwner = targetRows[0].access_role === 'owner';
+	if (isOwner) {
+		const { rows: ownerRows } = await db.query(
+			`SELECT COUNT(*) AS owner_count
+       FROM collection_members
+       WHERE collection_id = $1 AND access_role = 'owner' AND user_id != $2`,
+			[collectionId, userId]
+		);
+		const remainingOwners = parseInt(ownerRows[0].owner_count, 10);
+		if (remainingOwners === 0) {
+			throw new AppError(
+				409,
+				'Cannot remove the last owner of a collection. Promote another member to owner first, or delete the collection.'
+			);
+		}
+	}
+
 	const { rowCount } = await db.query(
 		'DELETE FROM collection_members WHERE collection_id = $1 AND user_id = $2',
 		[collectionId, userId]
