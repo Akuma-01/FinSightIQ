@@ -50,6 +50,20 @@ const EnvSchema = z.object({
 	HUGGINGFACE_API_KEY: z.string().optional(),
 
 	RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
+
+	// Groq LLM
+	GROQ_BASE_URL: z.url().default('https://api.groq.com/openai/v1'),
+	LLM_MAX_RETRIES: z.coerce.number().int().min(1).max(5).default(3),
+	LLM_RETRY_DELAY_MS: z.coerce.number().int().min(500).default(2_000),
+
+	// Contradiction detection
+	CONTRADICTION_PREFILTER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
+	CONTRADICTION_TOP_CHUNKS: z.coerce.number().int().min(1).max(10).default(5),
+
+	// BM25 / full-text
+	KEYWORD_TRIGGER_TERMS: z.string().default(
+		'shall must not prohibit effective date penalty section circular directive'
+	),
 });
 
 
