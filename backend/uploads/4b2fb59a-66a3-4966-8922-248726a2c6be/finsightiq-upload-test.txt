@@ -1,6 +1,0 @@
-Section 1 Overview
-This test document validates the FinSightIQ ingestion pipeline from upload through chunking and indexing. It contains enough text to pass the extraction guardrail and create searchable chunks for the worker. The content is deliberately plain text so the test focuses on application wiring, BullMQ processing, Redis connectivity, PostgreSQL persistence, and WebSocket event publication.
-Section 2 Risk Controls
-The platform should save the document, register a processing row, enqueue a background ingestion job, read the stored file, segment the extracted text, call the embedding provider, store chunks with vectors and keyword search data, mark the document ready, and publish a document ready event for connected analysts.
-Section 3 Verification
-The database should show a completed ingestion job, at least one chunk, a ready document status, and a websocket event with event type document:ready for the target collection.
