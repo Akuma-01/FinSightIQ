@@ -11,7 +11,7 @@ const EdgarSchema = z.object({
 	),
 	filingType: z.enum(['10-K', '10-Q', '8-K']).default('10-K'),
 	year: z.coerce.number().int().min(1993).max(new Date().getFullYear()),
-	collectionId: z.string().uuid(),
+	collectionId: z.uuid(),
 });
 
 export const fetchFiling = [

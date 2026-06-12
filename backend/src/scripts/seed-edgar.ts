@@ -3,7 +3,7 @@ import { createInterface } from 'readline';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { edgarQueue } from '../queue/edgar.queue';
-import { redis } from '../redis/client';
+import { redis, redisSub } from '../redis/client';
 
 const COLLECTION_ID = process.env.SEED_COLLECTION_ID ?? (() => { throw new Error('SEED_COLLECTION_ID required'); })();
 const YEAR = parseInt(process.env.SEED_YEAR ?? '2024', 10);
@@ -51,6 +51,7 @@ async function main() {
 
 	await db.end();
 	await redis.quit();
+	await redisSub.quit();
 	logger.info('seed-edgar complete');
 }
 

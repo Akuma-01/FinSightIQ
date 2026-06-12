@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
-import { createWriteStream, mkdirSync, unlinkSync } from 'fs';
-import { basename, join, resolve } from 'path';
+import { createWriteStream, mkdirSync, rmSync, unlinkSync } from 'fs';
+import { basename, dirname, join, resolve } from 'path';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 
@@ -65,8 +65,10 @@ export function getAbsolutePath(storageKey: string): string {
 }
 
 export function deleteFile(storageKey: string): void {
+	const absPath = join(config.UPLOAD_DIR, storageKey);
 	try {
-		unlinkSync(join(config.UPLOAD_DIR, storageKey));
+		unlinkSync(absPath);
+		rmSync(dirname(absPath), { recursive: false, force: true });
 	} catch (err) {
 		logger.warn({ err, storageKey }, 'Failed to delete file from local disk');
 	}

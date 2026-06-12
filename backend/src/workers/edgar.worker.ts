@@ -39,6 +39,20 @@ async function resolveCIK(ticker: string): Promise<string> {
 		throw new Error(`Invalid ticker format: ${ticker}`);
 	}
 
+	const tickersUrl = assertEdgarUrl(
+		'https://www.sec.gov/files/company_tickers.json',
+		EDGAR_WWW_HOSTNAME
+	);
+	const { data: tickers } = await axios.get(
+		tickersUrl,
+		{ headers: EDGAR_HEADERS, timeout: 20_000 }
+	);
+
+	const match = Object.values(tickers as Record<string, { cik_str: number; ticker: string }>).find(
+		(company) => company.ticker?.toUpperCase() === ticker
+	);
+	if (match) return String(match.cik_str).padStart(10, '0');
+
 	const url = assertEdgarUrl(
 		`https://www.sec.gov/cgi-bin/browse-edgar?company=&CIK=${encodeURIComponent(ticker)}&type=10-K&dateb=&owner=include&count=1&search_text=&action=getcompany&output=atom`,
 		EDGAR_WWW_HOSTNAME
@@ -48,9 +62,9 @@ async function resolveCIK(ticker: string): Promise<string> {
 		{ headers: EDGAR_HEADERS, timeout: 15_000 }
 	);
 	// Parse CIK from atom feed — look for <cik-number> element
-	const match = data.match(/<cik-number>(\d+)<\/cik-number>/);
-	if (!match) throw new Error(`CIK not found for ticker: ${ticker}`);
-	return match[1].padStart(10, '0');
+	const atomMatch = data.match(/<cik-number>(\d+)<\/cik-number>/);
+	if (!atomMatch) throw new Error(`CIK not found for ticker: ${ticker}`);
+	return atomMatch[1].padStart(10, '0');
 }
 
 /** Get recent filings of a given type from EDGAR submissions API */
@@ -142,6 +156,7 @@ async function processEdgarJob(job: Job<EdgarJobData>): Promise<void> {
 
 	const text = await downloadFilingText(cik, filing.accessionNumber);
 	const filename = `${ticker}_${filingType}_${year}.txt`;
+	const uploadedBy = requestedBy === 'seed-script' ? null : requestedBy;
 
 	// Save to local disk via storage adapter
 	const stored = await saveFile(Buffer.from(text, 'utf8'), filename, 'text/plain');
@@ -164,7 +179,7 @@ async function processEdgarJob(job: Job<EdgarJobData>): Promise<void> {
 		[
 			collectionId, filename, filename, Buffer.byteLength(text, 'utf8'),
 			stored.localPath, stored.storageKey,
-			filing.accessionNumber, filing.filingDate, requestedBy,
+			filing.accessionNumber, filing.filingDate, uploadedBy,
 		]
 	);
 	const documentId = rows[0].id;

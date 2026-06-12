@@ -2,6 +2,7 @@ import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { AppError } from '../middleware/error.middleware';
 import { AuthUser } from '../types/express';
+import { deleteFile } from './storage.service';
 
 // ─── Sequence helpers ────────────────────────────────────────────────────────
 
@@ -130,12 +131,23 @@ export async function updateCollection(id: string, patch: { name?: string; archi
 
 export async function deleteCollection(id: string) {
 	const client = await db.connect();
+	let storageKeys: string[] = [];
 	try {
 		await client.query('BEGIN');
+		const documentResult = await client.query(
+			'SELECT storage_key FROM documents WHERE collection_id = $1 AND storage_key IS NOT NULL',
+			[id]
+		);
+		storageKeys = documentResult.rows.map((row) => row.storage_key);
+
 		const { rowCount } = await client.query('DELETE FROM collections WHERE id = $1', [id]);
 		if (!rowCount) throw new AppError(404, 'Collection not found');
 		await client.query(`DROP SEQUENCE IF EXISTS "${seqName(id)}"`);
 		await client.query('COMMIT');
+
+		for (const storageKey of storageKeys) {
+			deleteFile(storageKey);
+		}
 		logger.info({ collectionId: id }, 'Collection deleted');
 	} catch (err) {
 		await client.query('ROLLBACK');

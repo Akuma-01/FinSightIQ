@@ -7,6 +7,8 @@ import { createServer } from 'http';
 import pinoHttp from 'pino-http';
 import { config } from './config';
 
+import { mkdir } from 'fs/promises';
+
 import { db } from './db/pool';
 import { logger } from './lib/logger';
 import { errorHandler, notFound } from './middleware/error.middleware';
@@ -15,6 +17,7 @@ import { scheduleCleanupJob } from './queue/cleanup.queue';
 import { redis } from './redis/client';
 import authRoutes from './routes/auth.routes';
 import collectionsRoutes from './routes/collections.routes';
+import documentsRoutes from './routes/documents.routes';
 import edgarRoutes from './routes/edgar.routes';
 import healthRoutes from './routes/health.routes';
 import testRoutes from './routes/test.routes';
@@ -35,8 +38,9 @@ process.on('uncaughtException', (err) => {
 });
 
 async function bootstrap() {
-	const app = express();
+	mkdir(config.UPLOAD_DIR, { recursive: true });
 
+	const app = express();
 
 	// ── Security ───────────────────────────────────────────────────
 	app.disable('x-powered-by');
@@ -66,6 +70,7 @@ async function bootstrap() {
 	// ── Routes ────────────────────────────────────────────────────
 	app.use('/api/auth', authRoutes);
 	app.use('/api/collections', collectionsRoutes);
+	app.use('/api/collections/:collectionId/documents', documentsRoutes);
 	app.use('/api/edgar', edgarRoutes);
 	app.use('/api', testRoutes);
 	app.use(healthRoutes);

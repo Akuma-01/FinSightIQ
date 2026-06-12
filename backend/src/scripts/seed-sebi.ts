@@ -4,7 +4,7 @@ import { config } from '../config';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { ingestQueue } from '../queue/ingest.queue';
-import { redis } from '../redis/client';
+import { redis, redisSub } from '../redis/client';
 import { saveFile } from '../services/storage.service';
 
 const COLLECTION_ID = process.env.SEED_COLLECTION_ID
@@ -71,9 +71,7 @@ async function main() {
 		logger.info({ page, rowCount: rows.length }, 'Parsed circular rows');
 
 		for (const row of rows) {
-			const rawUrl = row.href.startsWith('http')
-				? row.href
-				: `https://www.sebi.gov.in${row.href}`;
+			const rawUrl = new URL(row.href, 'https://www.sebi.gov.in/').toString();
 			const pdfUrl = assertHttpsUrl(rawUrl, `SEBI circular ${row.number}`);
 
 			if (DRY_RUN) {
@@ -98,7 +96,7 @@ async function main() {
               local_path, storage_key, status, doc_type, source,
               source_identifier, effective_date, uploaded_by)
            VALUES ($1,$2,$2,'application/pdf',$3,$4,$5,'processing',
-                   'regulatory_circular','SEBI',$6,$7,'seed-sebi')
+                   'regulatory_circular','SEBI',$6,$7,NULL)
            RETURNING id`,
 					[COLLECTION_ID, filename, stored.sizeBytes, stored.localPath, stored.storageKey,
 						row.number, row.date || null]
@@ -132,6 +130,7 @@ async function main() {
 	logger.info({ enqueued }, 'seed-sebi complete');
 	await db.end();
 	await redis.quit();
+	await redisSub.quit();
 }
 
 main().catch(err => { logger.error(err); process.exit(1); });
