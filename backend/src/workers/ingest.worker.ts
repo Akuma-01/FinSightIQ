@@ -8,6 +8,7 @@ import { logger } from '../lib/logger';
 import { IngestJobData } from '../queue/ingest.queue';
 import { redis } from '../redis/client';
 import { embedTexts } from '../services/embedding.service';
+import { detectStaleReferences } from '../services/stale.service';
 import { getAbsolutePath } from '../services/storage.service';
 import { broadcastToRoom } from '../websocket/ws.rooms';
 
@@ -122,6 +123,10 @@ async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
 		documentId,
 		filename: docResult.rows[0]?.original_name ?? docResult.rows[0]?.filename,
 		chunkCount: chunks.length,
+	});
+
+	await detectStaleReferences(documentId, collectionId, 'system').catch(err => {
+		logger.error({ err, documentId }, 'Stale reference detection failed — non-fatal');
 	});
 }
 
