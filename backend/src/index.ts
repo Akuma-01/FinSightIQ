@@ -15,6 +15,8 @@ import { errorHandler, notFound } from './middleware/error.middleware';
 import { requestId } from './middleware/requestId.middleware';
 import { scheduleCleanupJob } from './queue/cleanup.queue';
 import { redis } from './redis/client';
+import aiRoutes from './routes/ai.routes';
+import annotationsRoutes from './routes/annotations.routes';
 import authRoutes from './routes/auth.routes';
 import collectionsRoutes from './routes/collections.routes';
 import documentsRoutes from './routes/documents.routes';
@@ -74,6 +76,12 @@ async function bootstrap() {
 	app.use('/api/edgar', edgarRoutes);
 	app.use('/api', testRoutes);
 	app.use(healthRoutes);
+
+	app.use('/api/ai', aiRoutes);
+	app.use(
+		'/api/collections/:collectionId/documents/:documentId/annotations',
+		annotationsRoutes
+	);
 
 	// ── 404 + Error handlers (must be LAST) ───────────────────────
 	app.use(notFound);
