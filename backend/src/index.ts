@@ -27,6 +27,7 @@ import { initWebSocketServer } from './websocket/ws.server';
 import { startCleanupWorker } from './workers/cleanup.worker';
 import { startEdgarWorker } from './workers/edgar.worker';
 import { startIngestWorker } from './workers/ingest.worker';
+import { startScanWorker } from './workers/scan.worker';
 
 // ── Process-level safety net ────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
@@ -95,6 +96,7 @@ async function bootstrap() {
 	startCleanupWorker();
 	startIngestWorker();
 	startEdgarWorker();
+	startScanWorker();
 	await scheduleCleanupJob();
 
 	// ── Listen ───────────────────────────────────────────────────

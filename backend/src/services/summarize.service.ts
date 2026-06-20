@@ -4,6 +4,52 @@ import { buildPrompt } from '../lib/llm/prompt.builder';
 import { logger } from '../lib/logger';
 import { AppError } from '../middleware/error.middleware';
 
+interface SummaryDocument {
+	id: string;
+	filename: string;
+}
+
+async function summarizeWithConcurrency(
+	docs: SummaryDocument[],
+	userId: string,
+	limit = 3
+): Promise<string[]> {
+	const results: string[] = [];
+	let skipped = 0;
+
+	for (let i = 0; i < docs.length; i += limit) {
+		const batch = docs.slice(i, i + limit);
+		const settled = await Promise.allSettled(
+			batch.map(async doc => {
+				const { summary } = await summarizeDocument(doc.id, userId);
+				return `${doc.filename}:\n${summary}`;
+			})
+		);
+
+		settled.forEach((result, index) => {
+			if (result.status === 'fulfilled') {
+				results.push(result.value);
+				return;
+			}
+
+			skipped++;
+			logger.warn(
+				{ err: result.reason, documentId: batch[index]?.id },
+				'Skipping document in collection summary'
+			);
+		});
+	}
+
+	if (skipped > 0) {
+		logger.info(
+			{ skipped, total: docs.length },
+			'Collection summary: some documents skipped'
+		);
+	}
+
+	return results;
+}
+
 /** Single document summary */
 export async function summarizeDocument(documentId: string, userId: string) {
 	const docResult = await db.query(
@@ -62,15 +108,7 @@ export async function summarizeCollection(collectionId: string, userId: string) 
 	const colResult = await db.query('SELECT name FROM collections WHERE id = $1', [collectionId]);
 	const collectionName = colResult.rows[0]?.name ?? 'Unknown';
 
-	const docSummaries: string[] = [];
-	for (const doc of docs) {
-		try {
-			const { summary } = await summarizeDocument(doc.id, userId);
-			docSummaries.push(`${doc.filename}:\n${summary}`);
-		} catch (err) {
-			logger.warn({ err, documentId: doc.id }, 'Skipping document in collection summary');
-		}
-	}
+	const docSummaries = await summarizeWithConcurrency(docs, userId, 3);
 
 	if (!docSummaries.length) throw new AppError(409, 'Could not summarize any documents');
 

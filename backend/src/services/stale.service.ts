@@ -8,20 +8,27 @@ import { broadcastToRoom } from '../websocket/ws.rooms';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
-const ReferencesOutputSchema = z.object({
-	references: z.array(z.object({
-		referenced_identifier: z.string(),
-		referenced_body: z.string(),
-		context: z.string(),
-	})),
-});
+const ReferenceItemsSchema = z.array(z.object({
+	referenced_identifier: z.string().min(1).max(200).transform(s => s.trim()),
+	referenced_body: z.string().min(1).max(100).transform(s => s.trim()),
+	context: z.string().min(1).max(500).transform(s => s.trim()),
+})).max(50);
+
+const ReferencesOutputSchema = z.union([
+	ReferenceItemsSchema,
+	z.object({ references: ReferenceItemsSchema }),
+]).transform(value => Array.isArray(value) ? value : value.references);
 
 const StaleCheckOutputSchema = z.object({
 	is_stale: z.boolean(),
-	reason: z.string(),
+	reason: z.string().max(800).transform(s => s.trim()),
 });
 
-export async function detectStaleReferences(documentId: string, collectionId: string, userId: string) {
+export async function detectStaleReferences(
+	documentId: string,
+	collectionId: string,
+	userId?: string
+) {
 	const log = logger.child({ documentId, collectionId });
 
 	// Get first 20 chunks of the new document (enough for reference extraction)
@@ -56,22 +63,21 @@ export async function detectStaleReferences(documentId: string, collectionId: st
 		return;
 	}
 
-	for (const ref of parsedRefs.data.references) {
+	for (const ref of parsedRefs.data) {
 		const { rows: newer } = await db.query(
 			`SELECT id, filename, source_identifier, effective_date
        FROM documents
        WHERE source = $1
          AND status = 'ready'
          AND id != $2
-         AND (
-           effective_date > (
-             SELECT effective_date FROM documents WHERE id = $2
-           )
-           OR source_identifier > $3
+         AND collection_id = $3
+         AND effective_date IS NOT NULL
+         AND effective_date > (
+           SELECT effective_date FROM documents WHERE id = $2
          )
-       ORDER BY effective_date DESC NULLS LAST
+       ORDER BY effective_date DESC
        LIMIT 1`,
-			[ref.referenced_body, documentId, ref.referenced_identifier]
+			[ref.referenced_body, documentId, collectionId]
 		);
 
 		if (!newer.length) continue;
@@ -143,7 +149,29 @@ export async function listStaleReferences(collectionId: string) {
 	return rows;
 }
 
-export async function resolveStaleReference(id: string, resolvedBy: string) {
+export async function resolveStaleReference(id: string, resolvedBy: string, userRole: string) {
+	const { rows: staleRows } = await db.query(
+		'SELECT id, collection_id, is_resolved FROM stale_references WHERE id = $1',
+		[id]
+	);
+	if (!staleRows[0]) throw new AppError(404, 'Stale reference not found');
+	if (staleRows[0].is_resolved) {
+		throw new AppError(409, 'Stale reference is already resolved');
+	}
+
+	if (userRole !== 'admin') {
+		const { rows: memberRows } = await db.query(
+			'SELECT 1 FROM collection_members WHERE collection_id = $1 AND user_id = $2',
+			[staleRows[0].collection_id, resolvedBy]
+		);
+		if (!memberRows.length) {
+			throw new AppError(
+				403,
+				'You are not a member of the collection this stale reference belongs to'
+			);
+		}
+	}
+
 	const { rows } = await db.query(
 		`UPDATE stale_references
      SET is_resolved = TRUE, resolved_by = $1, resolved_at = NOW()

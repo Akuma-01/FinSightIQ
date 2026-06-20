@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/pool';
 import { AppError, asyncHandler } from '../middleware/error.middleware';
+import { scanQueue } from '../queue/scan.queue';
+import { redis } from '../redis/client';
 import * as Contradiction from '../services/contradiction.service';
 import * as Search from '../services/search.service';
 import * as Stale from '../services/stale.service';
@@ -17,8 +19,37 @@ function getUuidParam(req: Request, name: string): string {
 
 export const scanCollection = asyncHandler(async (req: Request, res: Response) => {
 	const collectionId = getUuidParam(req, 'collectionId');
-	const result = await Contradiction.scanCollection(collectionId, req.user!.id);
-	res.json(result);
+	const { rows } = await db.query(
+		`SELECT COUNT(*)::int AS ready_count
+		 FROM documents
+		 WHERE collection_id = $1 AND status = 'ready'`,
+		[collectionId]
+	);
+	if (rows[0].ready_count < 2) {
+		throw new AppError(409, 'Collection needs at least 2 ready documents to scan');
+	}
+
+	const lockKey = `scan:lock:${collectionId}`;
+	const acquired = await redis.set(lockKey, req.user!.id, 'EX', 30 * 60, 'NX');
+	if (!acquired) {
+		throw new AppError(409, 'A scan is already running for this collection. Wait for it to complete.');
+	}
+
+	try {
+		const job = await scanQueue.add('scan', {
+			collectionId,
+			userId: req.user!.id,
+			mode: 'full',
+		});
+
+		res.status(202).json({
+			jobId: job.id,
+			message: 'Scan queued - results will arrive via WebSocket',
+		});
+	} catch (err) {
+		await redis.del(lockKey);
+		throw err;
+	}
 });
 
 export const scanTargeted = asyncHandler(async (req: Request, res: Response) => {
@@ -29,11 +60,22 @@ export const scanTargeted = asyncHandler(async (req: Request, res: Response) => 
 	});
 	const parsed = schema.safeParse(req.body);
 	if (!parsed.success) throw new AppError(400, parsed.error.message);
+	if (parsed.data.docIdA === parsed.data.docIdB) {
+		throw new AppError(400, 'docIdA and docIdB must be different documents');
+	}
 
-	const result = await Contradiction.scanDocumentPairTargeted(
-		parsed.data.docIdA, parsed.data.docIdB, parsed.data.collectionId, req.user!.id
-	);
-	res.json(result);
+	const job = await scanQueue.add('scan', {
+		collectionId: parsed.data.collectionId,
+		userId: req.user!.id,
+		mode: 'targeted',
+		docIdA: parsed.data.docIdA,
+		docIdB: parsed.data.docIdB,
+	});
+
+	res.status(202).json({
+		jobId: job.id,
+		message: 'Targeted scan queued',
+	});
 });
 
 export const listContradictions = asyncHandler(async (req: Request, res: Response) => {
@@ -44,7 +86,11 @@ export const listContradictions = asyncHandler(async (req: Request, res: Respons
 
 export const resolveContradiction = asyncHandler(async (req: Request, res: Response) => {
 	const contradictionId = getUuidParam(req, 'id');
-	const row = await Contradiction.resolveContradiction(contradictionId, req.user!.id);
+	const row = await Contradiction.resolveContradiction(
+		contradictionId,
+		req.user!.id,
+		req.user!.role
+	);
 	res.json({ contradiction: row });
 });
 
@@ -58,7 +104,11 @@ export const listStaleRefs = asyncHandler(async (req: Request, res: Response) =>
 
 export const resolveStaleRef = asyncHandler(async (req: Request, res: Response) => {
 	const staleReferenceId = getUuidParam(req, 'id');
-	const row = await Stale.resolveStaleReference(staleReferenceId, req.user!.id);
+	const row = await Stale.resolveStaleReference(
+		staleReferenceId,
+		req.user!.id,
+		req.user!.role
+	);
 	res.json({ staleReference: row });
 });
 
@@ -105,7 +155,11 @@ export const collectionSummary = asyncHandler(async (req: Request, res: Response
 	);
 
 	res.json({
-		...rows[0],
+		critical: Number(rows[0].critical),
+		moderate: Number(rows[0].moderate),
+		minor: Number(rows[0].minor),
+		unresolved: Number(rows[0].unresolved),
+		total: Number(rows[0].total),
 		stale: parseInt(staleResult.rows[0].stale, 10),
 	});
 });

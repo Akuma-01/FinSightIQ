@@ -2,6 +2,7 @@ import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { AppError } from '../middleware/error.middleware';
 import { ingestQueue } from '../queue/ingest.queue';
+import { broadcastToRoom } from '../websocket/ws.rooms';
 import { deleteFile, sanitizeFilename, saveFile } from './storage.service';
 
 export async function uploadDocument(
@@ -74,6 +75,11 @@ export async function uploadDocument(
 		jobId,
 		storageKey: stored.storageKey,
 		chunkingStrategy: colResult.rows[0].chunking_strategy,
+	});
+
+	await broadcastToRoom(collectionId, 'document:processing', {
+		documentId: document.id,
+		filename: stored.originalName,
 	});
 
 	logger.info({ documentId: document.id, collectionId, jobId }, 'Document upload queued');

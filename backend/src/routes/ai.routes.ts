@@ -13,11 +13,11 @@ const router = Router();
 router.use(verifyJWT);
 
 // Contradiction scan
-router.post('/contradict/:collectionId',
-	requireCollectionMember, contradictRateLimit, AI.scanCollection);
-
 router.post('/contradict/targeted',
 	contradictRateLimit, AI.scanTargeted);
+
+router.post('/contradict/:collectionId',
+	requireCollectionMember, contradictRateLimit, AI.scanCollection);
 
 router.get('/contradictions/:collectionId',
 	requireCollectionMember, AI.listContradictions);

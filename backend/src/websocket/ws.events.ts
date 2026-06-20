@@ -4,6 +4,7 @@ export type WSEventType =
 	| 'document:failed'
 	| 'contradiction:new'
 	| 'scan:started'
+	| 'scan:progress'
 	| 'scan:complete'
 	| 'annotation:created'
 	| 'annotation:updated'

@@ -8,6 +8,7 @@ import { logger } from '../lib/logger';
 import { IngestJobData } from '../queue/ingest.queue';
 import { redis } from '../redis/client';
 import { embedTexts } from '../services/embedding.service';
+import { invalidateCentroidCache } from '../services/contradiction.service';
 import { detectStaleReferences } from '../services/stale.service';
 import { getAbsolutePath } from '../services/storage.service';
 import { broadcastToRoom } from '../websocket/ws.rooms';
@@ -82,6 +83,7 @@ async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
 		await client.query('BEGIN');
 
 		await client.query('DELETE FROM chunks WHERE document_id = $1', [documentId]);
+		await invalidateCentroidCache(documentId);
 
 		for (let i = 0; i < chunks.length; i++) {
 			const c = chunks[i];
@@ -125,7 +127,7 @@ async function processIngestJob(job: Job<IngestJobData>): Promise<void> {
 		chunkCount: chunks.length,
 	});
 
-	await detectStaleReferences(documentId, collectionId, 'system').catch(err => {
+	await detectStaleReferences(documentId, collectionId).catch(err => {
 		logger.error({ err, documentId }, 'Stale reference detection failed — non-fatal');
 	});
 }

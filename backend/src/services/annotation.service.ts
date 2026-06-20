@@ -34,6 +34,27 @@ export async function updateAnnotation(
 	userId: string,
 	userRole: string
 ) {
+	const { rows: existing } = await db.query(
+		'SELECT id, created_by, collection_id, is_resolved FROM annotations WHERE id = $1',
+		[id]
+	);
+	if (!existing[0]) throw new AppError(404, 'Annotation not found');
+
+	const annotation = existing[0];
+	if (patch.body !== undefined && userRole !== 'admin' && annotation.created_by !== userId) {
+		throw new AppError(403, 'Only the annotation author or an admin can edit the body');
+	}
+
+	if (patch.isResolved !== undefined) {
+		const canResolveAny = userRole === 'admin' || userRole === 'compliance_officer';
+		if (!canResolveAny && annotation.created_by !== userId) {
+			throw new AppError(
+				403,
+				'Only compliance officers or admins can resolve others\' annotations'
+			);
+		}
+	}
+
 	const fields: string[] = [];
 	const values: unknown[] = [];
 	let i = 1;
@@ -44,16 +65,13 @@ export async function updateAnnotation(
 
 	fields.push(`updated_at = NOW()`);
 	values.push(id);
-	const idParam = i++;
-	const ownerCondition = userRole === 'admin' ? '' : ` AND created_by = $${i}`;
-	if (userRole !== 'admin') values.push(userId);
 
 	const { rows } = await db.query(
 		`UPDATE annotations SET ${fields.join(', ')}
-     WHERE id = $${idParam}${ownerCondition} RETURNING *`,
+     WHERE id = $${i} RETURNING *`,
 		values
 	);
-	if (!rows[0]) throw new AppError(404, 'Annotation not found or not owned by you');
+	if (!rows[0]) throw new AppError(404, 'Annotation not found');
 
 	await broadcastToRoom(rows[0].collection_id, 'annotation:updated', { annotation: rows[0] });
 	return rows[0];

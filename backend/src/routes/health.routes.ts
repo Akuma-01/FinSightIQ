@@ -5,6 +5,7 @@ import { getWsConnectionCount } from '../websocket/ws.server';
 import { getCleanupWorkerStatus } from '../workers/cleanup.worker';
 import { getEdgarWorkerStatus } from '../workers/edgar.worker';
 import { getIngestWorkerStatus } from '../workers/ingest.worker';
+import { getScanWorkerStatus } from '../workers/scan.worker';
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.get('/health', async (_req: Request, res: Response) => {
 		cleanup_worker: getCleanupWorkerStatus(),
 		ingest_worker: getIngestWorkerStatus(),
 		edgar_worker: getEdgarWorkerStatus(),
+		scan_worker: getScanWorkerStatus(),
 		ws_connections: getWsConnectionCount(),
 	});
 });

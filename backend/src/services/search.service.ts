@@ -17,19 +17,22 @@ export async function semanticSearch(
 	userId: string
 ): Promise<SearchResult> {
 	const startMs = Date.now();
+	const safeQuery = query.trim().slice(0, 500);
+	const useKeyword = safeQuery.split(/\s+/).filter(word => word.length >= 3).length >= 2;
 
-	const [queryVector] = await embedTexts([query]);
+	const [queryVector] = await embedTexts([safeQuery]);
 	const vectorStr = `[${queryVector.join(',')}]`;
 
+	let chunks: {
+		id: string;
+		chunk_text: string;
+		chunk_index: number;
+		filename: string;
+	}[];
 
-	const triggerTerms = query
-		.split(/\s+/)
-		.filter(w => w.length > 3)
-		.slice(0, 8)
-		.join(' | ');
-
-	const { rows: chunks } = await db.query(
-		`WITH vector_leg AS (
+	if (useKeyword) {
+		const { rows } = await db.query(
+			`WITH vector_leg AS (
        SELECT c.id, c.chunk_text, c.chunk_index, d.filename,
               1 - (c.embedding <=> $1::vector) AS vector_score, 0 AS keyword_score
        FROM chunks c
@@ -41,11 +44,11 @@ export async function semanticSearch(
      keyword_leg AS (
        SELECT c.id, c.chunk_text, c.chunk_index, d.filename,
               0 AS vector_score,
-              ts_rank(c.chunk_text_tsv, to_tsquery('english', $4)) AS keyword_score
+              ts_rank(c.chunk_text_tsv, plainto_tsquery('english', $4)) AS keyword_score
        FROM chunks c
        JOIN documents d ON d.id = c.document_id
        WHERE c.collection_id = $2
-         AND chunk_text_tsv @@ to_tsquery('english', $4)
+         AND chunk_text_tsv @@ plainto_tsquery('english', $4)
        ORDER BY keyword_score DESC LIMIT 4
      ),
      combined AS (
@@ -56,8 +59,22 @@ export async function semanticSearch(
      )
      SELECT id, chunk_text, chunk_index, filename
      FROM combined ORDER BY combined_score DESC LIMIT 8`,
-		[vectorStr, collectionId, config.RAG_SIMILARITY_THRESHOLD, triggerTerms]
-	);
+			[vectorStr, collectionId, config.RAG_SIMILARITY_THRESHOLD, safeQuery]
+		);
+		chunks = rows;
+	} else {
+		const { rows } = await db.query(
+			`SELECT c.id, c.chunk_text, c.chunk_index, d.filename
+	     FROM chunks c
+	     JOIN documents d ON d.id = c.document_id
+	     WHERE c.collection_id = $1
+	       AND 1 - (c.embedding <=> $2::vector) >= $3
+	     ORDER BY c.embedding <=> $2::vector
+	     LIMIT 8`,
+			[collectionId, vectorStr, config.RAG_SIMILARITY_THRESHOLD]
+		);
+		chunks = rows;
+	}
 
 	if (!chunks.length) {
 		return {
@@ -73,7 +90,7 @@ export async function semanticSearch(
 		.join('\n\n---\n\n');
 
 	const { body, promptVersionId } = await buildPrompt('semantic_search', {
-		query,
+		query: safeQuery,
 		chunks: context,
 	});
 
