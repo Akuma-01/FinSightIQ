@@ -14,6 +14,13 @@ CHUNKING_STRATEGY="${CHUNKING_STRATEGY:-section_aware}"
 RUN_EDGAR="${RUN_EDGAR:-0}"
 RUN_SEED_DRY_RUNS="${RUN_SEED_DRY_RUNS:-0}"
 RUN_EDGAR_RATE_LIMIT="${RUN_EDGAR_RATE_LIMIT:-0}"
+RUN_RBI_LIVE="${RUN_RBI_LIVE:-0}"
+RUN_RBI_AI="${RUN_RBI_AI:-0}"
+RUN_RBI_CONTRADICTION="${RUN_RBI_CONTRADICTION:-0}"
+RBI_MAX_ENQUEUED="${RBI_MAX_ENQUEUED:-1}"
+RBI_NAME_FILTER="${RBI_NAME_FILTER:-}"
+RBI_REQUIRE_CONTRADICTION="${RBI_REQUIRE_CONTRADICTION:-0}"
+RBI_AI_QUERY="${RBI_AI_QUERY:-What are the main requirements, eligibility rules, operational duties, and compliance obligations in this RBI direction?}"
 RUN_ALL="${RUN_ALL:-0}"
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
 EDGAR_TICKER="${EDGAR_TICKER:-AAPL}"
@@ -25,6 +32,9 @@ if [[ "$RUN_ALL" == "1" ]]; then
 	RUN_EDGAR=1
 	RUN_SEED_DRY_RUNS=1
 	RUN_EDGAR_RATE_LIMIT=1
+	RUN_RBI_LIVE=1
+	RUN_RBI_AI=1
+	RUN_RBI_CONTRADICTION=1
 fi
 
 log() {
@@ -99,6 +109,9 @@ WHERE d.id = '$document_id';
 	(( chunks_with_vectors > 0 )) || fail "$label chunks have no embeddings"
 }
 
+[[ "$RBI_MAX_ENQUEUED" =~ ^[1-9][0-9]*$ ]] \
+	|| fail "RBI_MAX_ENQUEUED must be a positive integer"
+
 need_cmd curl
 need_cmd docker
 need_cmd node
@@ -156,6 +169,12 @@ log "Collection: $COLLECTION_ID"
 
 DOCUMENT_ID=""
 JOB_ID=""
+RBI_DOCUMENT_ID=""
+RBI_JOB_ID=""
+RBI_DOCUMENT_A=""
+RBI_DOCUMENT_B=""
+RBI_CONTRADICTION_COUNT="0"
+RBI_SCAN_JOB_ID=""
 
 if [[ "$SKIP_UPLOAD" != "1" ]]; then
 	log "Uploading PDF"
@@ -184,6 +203,233 @@ WHERE collection_id = '$COLLECTION_ID'
 	(( ready_events > 0 )) || fail "No document:ready event found in ws_events"
 
 	log "Upload + ingest + chunks + vectors + WebSocket event checks passed"
+fi
+
+if [[ "$RUN_RBI_LIVE" == "1" ]]; then
+	log "Running live RBI official-source ingestion"
+	rbi_doc_count_before="$(psql_scalar "
+SELECT COUNT(*)
+FROM documents d
+JOIN document_ingestion_jobs j ON j.document_id = d.id
+WHERE d.collection_id = '$COLLECTION_ID'
+  AND d.source = 'RBI'
+  AND d.doc_type = 'regulatory_circular';
+")"
+
+	cd "$ROOT_DIR/backend"
+	SEED_COLLECTION_ID="$COLLECTION_ID" \
+	MAX_ENQUEUED="$RBI_MAX_ENQUEUED" \
+	RBI_NAME_FILTER="$RBI_NAME_FILTER" \
+	npm run seed:rbi \
+		| tee /tmp/finsightiq-seed-rbi-live.log
+	cd "$ROOT_DIR"
+
+	grep -q 'RBI direction queued' /tmp/finsightiq-seed-rbi-live.log \
+		|| fail "Live RBI seed did not queue a document from the official RBI website"
+
+	log "Waiting for live RBI document row"
+	deadline=$((SECONDS + WAIT_SECONDS))
+	while (( SECONDS < deadline )); do
+		rbi_rows="$(psql_scalar "
+SELECT d.id || '|' || dij.id
+FROM documents d
+JOIN document_ingestion_jobs dij ON dij.document_id = d.id
+WHERE d.collection_id = '$COLLECTION_ID'
+  AND d.source = 'RBI'
+  AND d.doc_type = 'regulatory_circular'
+ORDER BY d.created_at;
+")"
+		rbi_row_count="$(printf '%s\n' "$rbi_rows" | sed '/^$/d' | wc -l | tr -d ' ')"
+		(( rbi_row_count >= RBI_MAX_ENQUEUED )) && break
+		sleep 2
+	done
+
+	(( rbi_row_count >= RBI_MAX_ENQUEUED )) \
+		|| fail "Expected $RBI_MAX_ENQUEUED live RBI document rows, found $rbi_row_count"
+
+	rbi_doc_count_after="$(psql_scalar "
+SELECT COUNT(*)
+FROM documents d
+JOIN document_ingestion_jobs j ON j.document_id = d.id
+WHERE d.collection_id = '$COLLECTION_ID'
+  AND d.source = 'RBI'
+  AND d.doc_type = 'regulatory_circular';
+")"
+	expected_rbi_count=$((rbi_doc_count_before + RBI_MAX_ENQUEUED))
+	[[ "$rbi_doc_count_after" == "$expected_rbi_count" ]] \
+		|| fail "Expected $RBI_MAX_ENQUEUED new RBI document(s). before=$rbi_doc_count_before after=$rbi_doc_count_after"
+
+	rbi_index=0
+	while IFS='|' read -r current_rbi_document_id current_rbi_job_id; do
+		[[ -n "$current_rbi_document_id" ]] || continue
+		rbi_index=$((rbi_index + 1))
+		[[ "$rbi_index" -eq 1 ]] && {
+			RBI_DOCUMENT_A="$current_rbi_document_id"
+			RBI_DOCUMENT_ID="$current_rbi_document_id"
+			RBI_JOB_ID="$current_rbi_job_id"
+		}
+		[[ "$rbi_index" -eq 2 ]] && RBI_DOCUMENT_B="$current_rbi_document_id"
+
+		log "Waiting for RBI ingestion result $rbi_index/$RBI_MAX_ENQUEUED"
+		wait_for_ready_document "$current_rbi_document_id" "$current_rbi_job_id" "rbi-$rbi_index"
+
+		rbi_ready_events="$(psql_scalar "
+SELECT COUNT(*)
+FROM ws_events
+WHERE collection_id = '$COLLECTION_ID'
+  AND event_type = 'document:ready'
+  AND payload->>'documentId' = '$current_rbi_document_id';
+")"
+		(( rbi_ready_events > 0 )) \
+			|| fail "No document:ready event found for RBI document $current_rbi_document_id"
+	done <<< "$rbi_rows"
+
+	log "Checking RBI source metadata"
+	rbi_metadata="$(psql_scalar "
+SELECT source || '|' || doc_type || '|' || COALESCE(source_identifier, '') || '|' ||
+       COALESCE(effective_date::text, '') || '|' || COALESCE(storage_key, '')
+FROM documents
+WHERE id = '$RBI_DOCUMENT_ID';
+")"
+	IFS='|' read -r rbi_source rbi_doc_type rbi_source_identifier rbi_effective_date rbi_storage_key <<< "$rbi_metadata"
+	[[ "$rbi_source" == "RBI" ]] || fail "Expected RBI source, got $rbi_source"
+	[[ "$rbi_doc_type" == "regulatory_circular" ]] \
+		|| fail "Expected regulatory_circular doc_type, got $rbi_doc_type"
+	[[ -n "$rbi_source_identifier" ]] || fail "RBI document has no source identifier"
+	[[ -n "$rbi_storage_key" ]] || fail "RBI document has no stored official PDF"
+
+	log "RBI source title: $rbi_source_identifier"
+	[[ -z "$rbi_effective_date" ]] || log "RBI effective date: $rbi_effective_date"
+
+	log "Live RBI official-source ingestion passed"
+fi
+
+if [[ "$RUN_RBI_AI" == "1" ]]; then
+	[[ "$RUN_RBI_LIVE" == "1" ]] \
+		|| fail "RUN_RBI_AI=1 requires RUN_RBI_LIVE=1"
+	[[ -n "$RBI_DOCUMENT_ID" ]] || fail "RBI AI checks require an ingested RBI document"
+
+	log "Running semantic search against the live RBI document"
+	rbi_search_body="$(
+		curl -fsS -X POST "$BASE_URL/api/ai/search" \
+			-H "Authorization: Bearer $TOKEN" \
+			-H 'Content-Type: application/json' \
+			-d "$(node -e '
+const collectionId = process.argv[1];
+const query = process.argv[2];
+process.stdout.write(JSON.stringify({ collectionId, query }));
+' "$COLLECTION_ID" "$RBI_AI_QUERY")"
+	)" || fail "RBI semantic search failed. Check Groq configuration and backend logs."
+	printf '%s\n' "$rbi_search_body" >/tmp/finsightiq-rbi-search.json
+	rbi_search_answer="$(printf '%s' "$rbi_search_body" | json_get answer)" \
+		|| fail "RBI search response did not contain an answer"
+	[[ -n "$rbi_search_answer" ]] || fail "RBI semantic search returned an empty answer"
+
+	rbi_search_sources="$(node -e '
+const fs = require("fs");
+const data = JSON.parse(fs.readFileSync(0, "utf8"));
+process.stdout.write(String(Array.isArray(data.sources) ? data.sources.length : 0));
+' <<< "$rbi_search_body")"
+	(( rbi_search_sources > 0 )) || fail "RBI semantic search returned no sources"
+	printf 'rbi_search_sources=%s\n' "$rbi_search_sources"
+
+	log "Summarizing the live RBI document"
+	rbi_document_summary="$(
+		curl -fsS -X POST "$BASE_URL/api/ai/summarize/document/$RBI_DOCUMENT_ID" \
+			-H "Authorization: Bearer $TOKEN"
+	)" || fail "RBI document summary failed. Check Groq configuration and backend logs."
+	printf '%s\n' "$rbi_document_summary" >/tmp/finsightiq-rbi-document-summary.json
+	[[ -n "$(printf '%s' "$rbi_document_summary" | json_get summary)" ]] \
+		|| fail "RBI document summary was empty"
+
+	log "Summarizing the RBI collection"
+	rbi_collection_summary="$(
+		curl -fsS -X POST "$BASE_URL/api/ai/summarize/collection/$COLLECTION_ID" \
+			-H "Authorization: Bearer $TOKEN"
+	)" || fail "RBI collection summary failed. Check Groq configuration and backend logs."
+	printf '%s\n' "$rbi_collection_summary" >/tmp/finsightiq-rbi-collection-summary.json
+	[[ "$(printf '%s' "$rbi_collection_summary" | json_get documentCount)" -ge 1 ]] \
+		|| fail "RBI collection summary did not include the ingested document"
+
+	log "Checking stale-reference results for the RBI collection"
+	rbi_stale_body="$(
+		curl -fsS "$BASE_URL/api/ai/stale/$COLLECTION_ID" \
+			-H "Authorization: Bearer $TOKEN"
+	)" || fail "RBI stale-reference request failed"
+	printf '%s\n' "$rbi_stale_body" >/tmp/finsightiq-rbi-stale-references.json
+
+	log "Checking LLM audit logs for RBI AI operations"
+	rbi_llm_log_count="$(psql_scalar "
+SELECT COUNT(*)
+FROM llm_logs
+WHERE user_id = '$USER_ID'
+  AND task IN ('semantic_search', 'summarize_document', 'summarize_collection');
+")"
+	(( rbi_llm_log_count >= 3 )) \
+		|| fail "Expected RBI search and summary audit logs, found $rbi_llm_log_count"
+
+	log "Live RBI Phase 3 AI checks passed"
+fi
+
+if [[ "$RUN_RBI_CONTRADICTION" == "1" ]]; then
+	[[ "$RUN_RBI_LIVE" == "1" ]] \
+		|| fail "RUN_RBI_CONTRADICTION=1 requires RUN_RBI_LIVE=1"
+	[[ "$RBI_MAX_ENQUEUED" -ge 2 ]] \
+		|| fail "RUN_RBI_CONTRADICTION=1 requires RBI_MAX_ENQUEUED=2 or greater"
+	[[ -n "$RBI_DOCUMENT_A" && -n "$RBI_DOCUMENT_B" ]] \
+		|| fail "RBI contradiction scan requires two ready RBI documents"
+
+	log "Queueing targeted contradiction scan for two live RBI documents"
+	rbi_scan_complete_before="$(psql_scalar "
+SELECT COUNT(*)
+FROM ws_events
+WHERE collection_id = '$COLLECTION_ID'
+  AND event_type = 'scan:complete';
+")"
+	rbi_scan_body="$(
+		curl -fsS -X POST "$BASE_URL/api/ai/contradict/targeted" \
+			-H "Authorization: Bearer $TOKEN" \
+			-H 'Content-Type: application/json' \
+			-d "{\"docIdA\":\"$RBI_DOCUMENT_A\",\"docIdB\":\"$RBI_DOCUMENT_B\",\"collectionId\":\"$COLLECTION_ID\"}"
+	)" || fail "RBI targeted contradiction scan request failed"
+	RBI_SCAN_JOB_ID="$(printf '%s' "$rbi_scan_body" | json_get jobId)" \
+		|| fail "RBI contradiction response did not contain jobId"
+
+	log "Waiting for RBI contradiction scan"
+	deadline=$((SECONDS + WAIT_SECONDS))
+	rbi_scan_complete_after="$rbi_scan_complete_before"
+	while (( SECONDS < deadline )); do
+		rbi_scan_complete_after="$(psql_scalar "
+SELECT COUNT(*)
+FROM ws_events
+WHERE collection_id = '$COLLECTION_ID'
+  AND event_type = 'scan:complete';
+")"
+		if (( rbi_scan_complete_after > rbi_scan_complete_before )); then
+			break
+		fi
+		sleep 2
+	done
+	(( rbi_scan_complete_after > rbi_scan_complete_before )) \
+		|| fail "Timed out waiting for RBI contradiction scan"
+
+	rbi_contradictions="$(
+		curl -fsS "$BASE_URL/api/ai/contradictions/$COLLECTION_ID" \
+			-H "Authorization: Bearer $TOKEN"
+	)" || fail "Could not list RBI contradictions"
+	printf '%s\n' "$rbi_contradictions" >/tmp/finsightiq-rbi-contradictions.json
+	RBI_CONTRADICTION_COUNT="$(node -e '
+const fs = require("fs");
+const data = JSON.parse(fs.readFileSync(0, "utf8"));
+process.stdout.write(String(Array.isArray(data.contradictions) ? data.contradictions.length : 0));
+' <<< "$rbi_contradictions")"
+	printf 'rbi_contradictions=%s\n' "$RBI_CONTRADICTION_COUNT"
+
+	if (( RBI_CONTRADICTION_COUNT == 0 )) && [[ "$RBI_REQUIRE_CONTRADICTION" == "1" ]]; then
+		fail "The two live RBI documents produced no stored contradiction"
+	fi
+
+	log "Live RBI contradiction scan passed"
 fi
 
 if [[ "$RUN_EDGAR" == "1" ]]; then
@@ -312,8 +558,10 @@ if [[ "$RUN_SEED_DRY_RUNS" == "1" ]]; then
 
 	SEED_COLLECTION_ID="$COLLECTION_ID" MAX_PAGES=1 npm run seed:sebi -- --dry-run \
 		| tee /tmp/finsightiq-seed-sebi-dry-run.log
-	grep -Eq 'Parsed circular rows|would download \+ enqueue' /tmp/finsightiq-seed-sebi-dry-run.log \
-		|| fail "seed:sebi dry-run did not log parsed rows or would-download output"
+	grep -q 'Parsed circular rows' /tmp/finsightiq-seed-sebi-dry-run.log \
+		|| fail "seed:sebi dry-run did not parse the listing page"
+	grep -q 'would resolve PDF + enqueue' /tmp/finsightiq-seed-sebi-dry-run.log \
+		|| fail "seed:sebi dry-run found no circular rows"
 
 	SEED_COLLECTION_ID="$COLLECTION_ID" npm run seed:rbi -- --dry-run \
 		| tee /tmp/finsightiq-seed-rbi-dry-run.log
@@ -329,4 +577,6 @@ if [[ "$RUN_SEED_DRY_RUNS" == "1" ]]; then
 fi
 
 log "Phase 2 smoke test complete"
-printf 'COLLECTION_ID=%s\nDOCUMENT_ID=%s\nJOB_ID=%s\n' "$COLLECTION_ID" "$DOCUMENT_ID" "$JOB_ID"
+printf 'USER_ID=%s\nCOLLECTION_ID=%s\nDOCUMENT_ID=%s\nJOB_ID=%s\nRBI_DOCUMENT_ID=%s\nRBI_JOB_ID=%s\nRBI_DOCUMENT_A=%s\nRBI_DOCUMENT_B=%s\nRBI_SCAN_JOB_ID=%s\nRBI_CONTRADICTION_COUNT=%s\n' \
+	"$USER_ID" "$COLLECTION_ID" "$DOCUMENT_ID" "$JOB_ID" "$RBI_DOCUMENT_ID" "$RBI_JOB_ID" \
+	"$RBI_DOCUMENT_A" "$RBI_DOCUMENT_B" "$RBI_SCAN_JOB_ID" "$RBI_CONTRADICTION_COUNT"

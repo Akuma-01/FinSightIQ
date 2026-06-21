@@ -22,7 +22,8 @@ function getUuidParam(req: Request, name: string): string {
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
 	const documentId = getUuidParam(req, 'documentId');
-	const rows = await Annotations.listAnnotations(documentId);
+	const collectionId = getUuidParam(req, 'collectionId');
+	const rows = await Annotations.listAnnotations(documentId, collectionId);
 	res.json({ annotations: rows });
 });
 
@@ -48,8 +49,12 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 	if (!parsed.success) throw new AppError(400, parsed.error.message);
 
 	const annotationId = getUuidParam(req, 'id');
+	const collectionId = getUuidParam(req, 'collectionId');
+	const documentId = getUuidParam(req, 'documentId');
 	const annotation = await Annotations.updateAnnotation(
 		annotationId,
+		collectionId,
+		documentId,
 		parsed.data,
 		req.user!.id,
 		req.user!.role
@@ -59,6 +64,14 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
 	const annotationId = getUuidParam(req, 'id');
-	await Annotations.deleteAnnotation(annotationId, req.user!.id, req.user!.role);
+	const collectionId = getUuidParam(req, 'collectionId');
+	const documentId = getUuidParam(req, 'documentId');
+	await Annotations.deleteAnnotation(
+		annotationId,
+		collectionId,
+		documentId,
+		req.user!.id,
+		req.user!.role
+	);
 	res.json({ message: 'Annotation deleted' });
 });

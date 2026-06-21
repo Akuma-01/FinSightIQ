@@ -11,6 +11,7 @@ export type WSEventType =
 	| 'annotation:deleted'
 	| 'stale_reference:new'
 	| 'presence:join'
+	| 'presence:viewing'
 	| 'presence:leave'
 	| 'room:state'
 	| 'error'

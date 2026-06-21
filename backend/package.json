@@ -12,6 +12,9 @@
     "seed:edgar": "ts-node -r dotenv/config src/scripts/seed-edgar.ts",
     "seed:sebi": "ts-node -r dotenv/config src/scripts/seed-sebi.ts",
     "seed:rbi": "ts-node -r dotenv/config src/scripts/seed-rbi.ts",
+    "test:phase3-acceptance": "node ../scripts/phase3-acceptance-smoke.js",
+    "test": "npm run build && node --test test/*.test.js",
+    "test:all": "npm test && npm run test:phase3-acceptance",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""
   },

@@ -1,7 +1,10 @@
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 import { config } from '../config';
 import { db } from '../db/pool';
+import {
+	parseSebiListingRows,
+	parseSebiPdfUrl,
+} from '../lib/regulatory/sebi.parser';
 import { logger } from '../lib/logger';
 import { ingestQueue } from '../queue/ingest.queue';
 import { redis, redisSub } from '../redis/client';
@@ -12,6 +15,7 @@ const COLLECTION_ID = process.env.SEED_COLLECTION_ID
 const DRY_RUN = process.argv.includes('--dry-run');
 const MAX_PAGES = parseInt(process.env.MAX_PAGES ?? '5', 10);
 const DELAY_MS = 1_000; // 1 req/sec — avoid IP block
+const MAX_DOCS = process.env.MAX_DOCS ? parseInt(process.env.MAX_DOCS, 10) : null;
 
 const SEBI_INDEX_URL =
 	'https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=1&ssid=0&smid=0&pageno=';
@@ -32,7 +36,7 @@ function assertHttpsUrl(url: string, context: string): string {
 }
 
 async function main() {
-	logger.info({ dryRun: DRY_RUN, maxPages: MAX_PAGES }, 'seed-sebi starting');
+	logger.info({ dryRun: DRY_RUN, maxPages: MAX_PAGES, maxDocs: MAX_DOCS }, 'seed-sebi starting');
 
 	const colResult = await db.query(
 		'SELECT chunking_strategy FROM collections WHERE id = $1',
@@ -52,34 +56,38 @@ async function main() {
 			timeout: 15_000,
 		});
 
-		const $ = cheerio.load(html);
-		const rows: { number: string; date: string; subject: string; href: string }[] = [];
-
-
-		$('table.table tr').each((_, tr) => {
-			const cells = $(tr).find('td');
-			if (cells.length < 3) return;
-
-			const number = $(cells[0]).text().trim();
-			const date = $(cells[1]).text().trim();
-			const subject = $(cells[2]).text().trim();
-			const link = $(cells[2]).find('a').attr('href') ?? $(cells[3]).find('a').attr('href') ?? '';
-
-			if (number && link) rows.push({ number, date, subject, href: link });
-		});
+		const rows = parseSebiListingRows(html);
 
 		logger.info({ page, rowCount: rows.length }, 'Parsed circular rows');
 
 		for (const row of rows) {
-			const rawUrl = new URL(row.href, 'https://www.sebi.gov.in/').toString();
-			const pdfUrl = assertHttpsUrl(rawUrl, `SEBI circular ${row.number}`);
+			if (MAX_DOCS !== null && enqueued >= MAX_DOCS) break;
 
 			if (DRY_RUN) {
-				logger.info({ number: row.number, date: row.date, pdfUrl }, '[DRY RUN] would download + enqueue');
+				logger.info(
+					{
+						identifier: row.identifier,
+						date: row.date,
+						subject: row.subject,
+						detailUrl: row.detailUrl,
+					},
+					'[DRY RUN] would resolve PDF + enqueue'
+				);
 				continue;
 			}
 
 			try {
+				const { data: detailHtml } = await axios.get(
+					assertHttpsUrl(row.detailUrl, `SEBI circular ${row.identifier}`),
+					{
+						headers: { 'User-Agent': config.EDGAR_USER_AGENT },
+						timeout: 15_000,
+					}
+				);
+				const pdfUrl = assertHttpsUrl(
+					parseSebiPdfUrl(detailHtml, row.detailUrl),
+					`SEBI circular ${row.identifier}`
+				);
 				logger.debug({ pdfUrl }, 'Downloading SEBI circular PDF');
 				const { data: pdfBuffer } = await axios.get(pdfUrl, {
 					responseType: 'arraybuffer',
@@ -87,8 +95,13 @@ async function main() {
 					timeout: 30_000,
 				});
 
-				const filename = `SEBI_${row.number.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-				const stored = await saveFile(Buffer.from(pdfBuffer), filename, 'application/pdf');
+				const buffer = Buffer.from(pdfBuffer);
+				if (buffer.subarray(0, 4).toString('utf8') !== '%PDF') {
+					throw new Error(`Downloaded SEBI content is not a PDF: ${pdfUrl}`);
+				}
+
+				const filename = `SEBI_${row.identifier.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+				const stored = await saveFile(buffer, filename, 'application/pdf');
 
 				const { rows: docRows } = await db.query(
 					`INSERT INTO documents
@@ -99,7 +112,7 @@ async function main() {
                    'regulatory_circular','SEBI',$6,$7,NULL)
            RETURNING id`,
 					[COLLECTION_ID, filename, stored.sizeBytes, stored.localPath, stored.storageKey,
-						row.number, row.date || null]
+						row.identifier, row.date]
 				);
 				const documentId = docRows[0].id;
 
@@ -118,9 +131,21 @@ async function main() {
 				});
 
 				enqueued++;
-				logger.info({ number: row.number, documentId }, 'Circular queued for ingestion');
+				logger.info(
+					{
+						identifier: row.identifier,
+						subject: row.subject,
+						detailUrl: row.detailUrl,
+						pdfUrl,
+						documentId,
+					},
+					'Circular queued for ingestion'
+				);
 			} catch (err) {
-				logger.error({ err, number: row.number, pdfUrl }, 'Failed to download SEBI circular — skipping');
+				logger.error(
+					{ err, identifier: row.identifier, detailUrl: row.detailUrl },
+					'Failed to download SEBI circular — skipping'
+				);
 			}
 
 			await sleep(DELAY_MS);

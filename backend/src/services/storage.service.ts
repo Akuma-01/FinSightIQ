@@ -1,5 +1,11 @@
 import { randomUUID } from 'crypto';
-import { createWriteStream, mkdirSync, rmSync, unlinkSync } from 'fs';
+import {
+	createWriteStream,
+	mkdirSync,
+	readdirSync,
+	rmdirSync,
+	unlinkSync,
+} from 'fs';
 import { basename, dirname, join, resolve } from 'path';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -61,15 +67,48 @@ export async function saveFile(
 }
 
 export function getAbsolutePath(storageKey: string): string {
-	return join(config.UPLOAD_DIR, storageKey);
+	const uploadRoot = resolve(config.UPLOAD_DIR);
+	const absolutePath = resolve(uploadRoot, storageKey);
+	if (absolutePath !== uploadRoot && !absolutePath.startsWith(`${uploadRoot}/`)) {
+		throw new Error('Path traversal detected: storage key escapes UPLOAD_DIR');
+	}
+	return absolutePath;
 }
 
 export function deleteFile(storageKey: string): void {
-	const absPath = join(config.UPLOAD_DIR, storageKey);
+	if (!storageKey) return;
+	const absPath = getAbsolutePath(storageKey);
 	try {
 		unlinkSync(absPath);
-		rmSync(dirname(absPath), { recursive: false, force: true });
+		rmdirSync(dirname(absPath));
 	} catch (err) {
+		const code = (err as NodeJS.ErrnoException).code;
+		if (code === 'ENOENT' || code === 'ENOTEMPTY') return;
 		logger.warn({ err, storageKey }, 'Failed to delete file from local disk');
 	}
+}
+
+export function pruneEmptyUploadDirectories(): number {
+	const uploadRoot = resolve(config.UPLOAD_DIR);
+	let removed = 0;
+
+	try {
+		for (const entry of readdirSync(uploadRoot, { withFileTypes: true })) {
+			if (!entry.isDirectory()) continue;
+
+			try {
+				rmdirSync(join(uploadRoot, entry.name));
+				removed++;
+			} catch (err) {
+				const code = (err as NodeJS.ErrnoException).code;
+				if (code !== 'ENOENT' && code !== 'ENOTEMPTY') {
+					logger.warn({ err, directory: entry.name }, 'Failed to prune upload directory');
+				}
+			}
+		}
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+	}
+
+	return removed;
 }

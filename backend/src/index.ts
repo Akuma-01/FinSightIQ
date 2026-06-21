@@ -19,6 +19,7 @@ import aiRoutes from './routes/ai.routes';
 import annotationsRoutes from './routes/annotations.routes';
 import authRoutes from './routes/auth.routes';
 import collectionsRoutes from './routes/collections.routes';
+import documentActionsRoutes from './routes/document-actions.routes';
 import documentsRoutes from './routes/documents.routes';
 import edgarRoutes from './routes/edgar.routes';
 import healthRoutes from './routes/health.routes';
@@ -74,6 +75,7 @@ async function bootstrap() {
 	app.use('/api/auth', authRoutes);
 	app.use('/api/collections', collectionsRoutes);
 	app.use('/api/collections/:collectionId/documents', documentsRoutes);
+	app.use('/api/documents', documentActionsRoutes);
 	app.use('/api/edgar', edgarRoutes);
 	app.use('/api', testRoutes);
 	app.use(healthRoutes);

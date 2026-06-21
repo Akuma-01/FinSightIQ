@@ -108,6 +108,40 @@ export async function leaveAllRooms(socket: WebSocket, user: AuthUser): Promise<
 	}
 }
 
+export async function broadcastViewing(
+	socket: WebSocket,
+	user: AuthUser,
+	collectionId: string,
+	documentId: string
+): Promise<void> {
+	if (!localRooms.get(collectionId)?.has(socket)) {
+		socket.send(JSON.stringify({
+			event: 'error',
+			timestamp: new Date().toISOString(),
+			payload: { code: 403, message: 'Join the collection room before viewing a document' },
+		} satisfies Omit<WSMessage, 'seq'>));
+		return;
+	}
+
+	const { rows } = await db.query(
+		'SELECT 1 FROM documents WHERE id = $1 AND collection_id = $2',
+		[documentId, collectionId]
+	);
+	if (!rows.length) {
+		socket.send(JSON.stringify({
+			event: 'error',
+			timestamp: new Date().toISOString(),
+			payload: { code: 404, message: 'Document not found in this collection' },
+		} satisfies Omit<WSMessage, 'seq'>));
+		return;
+	}
+
+	await broadcastToRoom(collectionId, 'presence:viewing', {
+		userId: user.id,
+		documentId,
+	});
+}
+
 /**
  * Publish a broadcast to a collection room via Redis.
  * Also persists the event to ws_events using the per-collection PostgreSQL sequence.

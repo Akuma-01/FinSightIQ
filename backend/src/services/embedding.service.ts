@@ -47,23 +47,54 @@ async function embedWithOllama(texts: string[]): Promise<number[][]> {
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
 	const provider = config.EMBEDDING_PROVIDER;
-	try {
-		switch (provider) {
-			case 'groq': return await embedWithGroq(texts);
-			case 'huggingface': return await embedWithHuggingFace(texts);
-			case 'ollama': return await embedWithOllama(texts);
-			default: {
-				const _exhaustive: never = provider;
-				throw new Error(`Unknown embedding provider: ${_exhaustive}`);
-			}
+
+	const providers: {
+		name: 'groq' | 'huggingface' | 'ollama';
+		available: boolean;
+		embed: () => Promise<number[][]>;
+	}[] = provider === 'groq'
+		? [
+			{ name: 'groq', available: Boolean(config.GROQ_API_KEY), embed: () => embedWithGroq(texts) },
+			{
+				name: 'huggingface',
+				available: Boolean(config.HUGGINGFACE_API_KEY),
+				embed: () => embedWithHuggingFace(texts),
+			},
+			{ name: 'ollama', available: true, embed: () => embedWithOllama(texts) },
+		]
+		: provider === 'huggingface'
+			? [
+				{
+					name: 'huggingface',
+					available: Boolean(config.HUGGINGFACE_API_KEY),
+					embed: () => embedWithHuggingFace(texts),
+				},
+				{ name: 'ollama', available: true, embed: () => embedWithOllama(texts) },
+			]
+			: [{ name: 'ollama', available: true, embed: () => embedWithOllama(texts) }];
+
+	let lastError: unknown;
+	for (const candidate of providers) {
+		if (!candidate.available) {
+			logger.warn(
+				{ provider: candidate.name },
+				'Embedding provider unavailable — trying next configured fallback'
+			);
+			continue;
 		}
-	} catch (err) {
-		if (provider === 'groq' && config.HUGGINGFACE_API_KEY) {
-			logger.warn({ err }, 'Groq embedding failed — falling back to HuggingFace');
-			return await embedWithHuggingFace(texts);
+
+		try {
+			return await candidate.embed();
+		} catch (err) {
+			lastError = err;
+			logger.warn(
+				{ err, provider: candidate.name },
+				'Embedding provider failed — trying next configured fallback'
+			);
 		}
-		throw err;
 	}
+
+	throw lastError ?? new AppError(500, 'No embedding provider is available');
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────

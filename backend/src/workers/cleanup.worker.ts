@@ -2,11 +2,20 @@ import { Worker } from 'bullmq';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
 import { redis } from '../redis/client';
+import { pruneEmptyUploadDirectories } from '../services/storage.service';
 
 let _status: 'active' | 'idle' = 'idle';
 export const getCleanupWorkerStatus = () => _status;
 
 export function startCleanupWorker(): void {
+	const removedUploadDirectories = pruneEmptyUploadDirectories();
+	if (removedUploadDirectories > 0) {
+		logger.info(
+			{ removedUploadDirectories },
+			'Pruned empty upload directories'
+		);
+	}
+
 	const worker = new Worker(
 		'cleanup-queue',
 		async (job) => {
@@ -29,8 +38,15 @@ export function startCleanupWorker(): void {
             ) ranked
             WHERE rn > 1000
           )
-        `);
-				logger.info({ rowCount: result.rowCount ?? 0 }, 'ws_events purge completed');
+				`);
+				const removedUploadDirectories = pruneEmptyUploadDirectories();
+				logger.info(
+					{
+						rowCount: result.rowCount ?? 0,
+						removedUploadDirectories,
+					},
+					'Cleanup completed'
+				);
 			} finally {
 				_status = 'idle';
 			}

@@ -65,11 +65,12 @@ export function initWebSocketServer(httpServer: HTTPServer): WebSocketServer {
 					}));
 					break;
 				case 'viewing':
-					// Presence update: "analyst is viewing document X"
-					await Rooms.broadcastToRoom(msg.collectionId, 'presence:join', {
-						userId: user.id,
-						viewingDocumentId: msg.documentId,
-					});
+					await Rooms.broadcastViewing(
+						socket,
+						user,
+						msg.collectionId,
+						msg.documentId
+					);
 					break;
 			}
 		});

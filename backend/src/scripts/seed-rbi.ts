@@ -1,7 +1,7 @@
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 import { PDFParse } from 'pdf-parse';
 import { db } from '../db/pool';
+import { parseRbiDirectionRows } from '../lib/regulatory/rbi.parser';
 import { logger } from '../lib/logger';
 import { ingestQueue } from '../queue/ingest.queue';
 import { redis, redisSub } from '../redis/client';
@@ -13,15 +13,18 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const DELAY_MS = 1_000;
 const SCANNED_THRESHOLD = 200;
 const MAX_DOCS = process.env.MAX_DOCS ? parseInt(process.env.MAX_DOCS, 10) : null;
+const MAX_ENQUEUED = process.env.MAX_ENQUEUED
+	? parseInt(process.env.MAX_ENQUEUED, 10)
+	: null;
+const NAME_FILTER = process.env.RBI_NAME_FILTER?.trim().toLowerCase() || null;
 
 const RBI_INDEX_URL = 'https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx';
-const RBI_ORIGIN = 'https://www.rbi.org.in/';
 const RBI_HEADERS = {
 	'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
 	'Accept': 'application/pdf,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 	'Accept-Language': 'en-US,en;q=0.9',
 	'Connection': 'close',
-	'Referer': RBI_ORIGIN,
+	'Referer': 'https://www.rbi.org.in/',
 };
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
@@ -49,10 +52,6 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
 	}
 }
 
-function isPdfUrl(url: string): boolean {
-	return /\.pdf(?:$|[?#])/i.test(url);
-}
-
 function isPdfBuffer(buffer: Buffer): boolean {
 	return buffer.subarray(0, 4).toString('utf8') === '%PDF';
 }
@@ -67,30 +66,16 @@ function parseRbiDate(raw: string): string | null {
 	return new Date(parsed).toISOString().slice(0, 10);
 }
 
-async function resolveRbiPdfUrl(url: string, context: string): Promise<string> {
-	const safeUrl = assertHttpsUrl(url, context);
-	if (isPdfUrl(safeUrl)) return safeUrl;
-
-	const { data: html } = await axios.get(safeUrl, {
-		headers: RBI_HEADERS,
-		timeout: 20_000,
-		maxRedirects: 5,
-		responseType: 'text',
-	});
-
-	const $ = cheerio.load(html);
-	const pdfHref = $('a[href]').map((_, a) => $(a).attr('href') ?? '').get()
-		.find((href) => isPdfUrl(href) || href.includes('rbidocs.rbi.org.in'));
-
-	if (!pdfHref) {
-		throw new Error(`${context}: could not find PDF link on RBI detail page: ${safeUrl}`);
-	}
-
-	return assertHttpsUrl(new URL(pdfHref, safeUrl).toString(), context);
-}
-
 async function main() {
-	logger.info({ dryRun: DRY_RUN, maxDocs: MAX_DOCS }, 'seed-rbi starting');
+	logger.info(
+		{
+			dryRun: DRY_RUN,
+			maxDocs: MAX_DOCS,
+			maxEnqueued: MAX_ENQUEUED,
+			nameFilter: NAME_FILTER,
+		},
+		'seed-rbi starting'
+	);
 
 	const colResult = await db.query(
 		'SELECT chunking_strategy FROM collections WHERE id = $1',
@@ -105,34 +90,44 @@ async function main() {
 		maxRedirects: 5,
 	});
 
-	const $ = cheerio.load(html);
-	const rows: { name: string; date: string; href: string }[] = [];
+	const rows = parseRbiDirectionRows(html);
 
-	// RBI table structure: Direction Name | Date | PDF link
-	$('table tr').each((_, tr) => {
-		const cells = $(tr).find('td');
-		if (cells.length < 2) return;
-		const name = $(cells[0]).text().trim();
-		const date = $(cells[1]).text().trim();
-		const href = $(cells[0]).find('a').attr('href') ?? $(cells[2]).find('a').attr('href') ?? '';
-		if (name && href) rows.push({ name, date, href });
-	});
+	const selectedRows = NAME_FILTER
+		? rows.filter(row => row.name.toLowerCase().includes(NAME_FILTER))
+		: rows;
 
-	logger.info({ count: rows.length }, 'Parsed RBI Master Direction rows');
+	logger.info(
+		{ count: rows.length, selectedCount: selectedRows.length, nameFilter: NAME_FILTER },
+		'Parsed RBI Master Direction rows'
+	);
+	if (NAME_FILTER && selectedRows.length === 0) {
+		throw new Error(`No RBI Master Directions matched RBI_NAME_FILTER=${process.env.RBI_NAME_FILTER}`);
+	}
 
 	let enqueued = 0;
 	let skippedScanned = 0;
 
-	for (const row of rows.slice(0, MAX_DOCS ?? rows.length)) {
-		const rawUrl = new URL(row.href, RBI_ORIGIN).toString();
+	let inspected = 0;
+
+	for (const row of selectedRows) {
+		if (MAX_DOCS !== null && inspected >= MAX_DOCS) break;
+		if (!DRY_RUN && MAX_ENQUEUED !== null && enqueued >= MAX_ENQUEUED) break;
+		inspected++;
 
 		if (DRY_RUN) {
-			logger.info({ name: row.name, detailUrl: assertHttpsUrl(rawUrl, `RBI direction ${row.name}`) }, '[DRY RUN] would process');
+			logger.info(
+				{
+					name: row.name,
+					detailUrl: assertHttpsUrl(row.detailUrl, `RBI direction ${row.name}`),
+					pdfUrl: assertHttpsUrl(row.pdfUrl, `RBI direction ${row.name}`),
+				},
+				'[DRY RUN] would process'
+			);
 			continue;
 		}
 
 		try {
-			const pdfUrl = await resolveRbiPdfUrl(rawUrl, `RBI direction ${row.name}`);
+			const pdfUrl = assertHttpsUrl(row.pdfUrl, `RBI direction ${row.name}`);
 			const effectiveDate = parseRbiDate(row.date);
 			const { data: pdfBuffer } = await axios.get(pdfUrl, {
 				responseType: 'arraybuffer',
@@ -198,7 +193,10 @@ async function main() {
 			});
 
 			enqueued++;
-			logger.info({ name: row.name, documentId }, 'RBI direction queued');
+			logger.info(
+				{ name: row.name, detailUrl: row.detailUrl, pdfUrl, documentId },
+				'RBI direction queued'
+			);
 		} catch (err) {
 			logger.error({ err, name: row.name }, 'Failed to download RBI direction — skipping');
 		}
@@ -206,7 +204,7 @@ async function main() {
 		await sleep(DELAY_MS);
 	}
 
-	logger.info({ enqueued, skippedScanned }, 'seed-rbi complete');
+	logger.info({ inspected, enqueued, skippedScanned }, 'seed-rbi complete');
 	await db.end();
 	await redis.quit();
 	await redisSub.quit();

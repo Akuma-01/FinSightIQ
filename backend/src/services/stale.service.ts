@@ -24,6 +24,21 @@ const StaleCheckOutputSchema = z.object({
 	reason: z.string().max(800).transform(s => s.trim()),
 });
 
+function normalizeRegulatorySource(value: string): string {
+	const normalized = value.trim().toLowerCase();
+	if (normalized === 'rbi' || normalized.includes('reserve bank of india')) return 'RBI';
+	if (normalized === 'sebi' || normalized.includes('securities and exchange board of india')) {
+		return 'SEBI';
+	}
+	if (
+		normalized === 'sec'
+		|| normalized.includes('securities and exchange commission')
+	) {
+		return 'SEC';
+	}
+	return value.trim();
+}
+
 export async function detectStaleReferences(
 	documentId: string,
 	collectionId: string,
@@ -64,6 +79,7 @@ export async function detectStaleReferences(
 	}
 
 	for (const ref of parsedRefs.data) {
+		const referencedSource = normalizeRegulatorySource(ref.referenced_body);
 		const { rows: newer } = await db.query(
 			`SELECT id, filename, source_identifier, effective_date
        FROM documents
@@ -77,7 +93,7 @@ export async function detectStaleReferences(
          )
        ORDER BY effective_date DESC
        LIMIT 1`,
-			[ref.referenced_body, documentId, collectionId]
+			[referencedSource, documentId, collectionId]
 		);
 
 		if (!newer.length) continue;
@@ -113,7 +129,7 @@ export async function detectStaleReferences(
          RETURNING id`,
 				[
 					documentId, collectionId,
-					ref.referenced_identifier, ref.referenced_body,
+					ref.referenced_identifier, referencedSource,
 					current.source_identifier ?? current.filename,
 					ref.context.slice(0, 200),
 				]
@@ -124,7 +140,7 @@ export async function detectStaleReferences(
 					id: inserted[0].id,
 					documentId,
 					referencedIdentifier: ref.referenced_identifier,
-					referencedBody: ref.referenced_body,
+					referencedBody: referencedSource,
 					currentIdentifier: current.source_identifier ?? current.filename,
 					reason: staleCheck.data.reason,
 				});
