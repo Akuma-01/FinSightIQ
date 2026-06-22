@@ -60,6 +60,11 @@ const EnvSchema = z.object({
 	CONTRADICTION_PREFILTER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
 	CONTRADICTION_TOP_CHUNKS: z.coerce.number().int().min(1).max(10).default(5),
 
+	// Research / benchmarking
+	GROUND_TRUTH_DIR: z.string().default('./ground-truth'),
+	BENCHMARK_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(2),
+	EXPORT_DIR: z.string().default('./exports'),
+
 	// BM25 / full-text
 	KEYWORD_TRIGGER_TERMS: z.string().default(
 		'shall must not prohibit effective date penalty section circular directive'
