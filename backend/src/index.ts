@@ -23,6 +23,8 @@ import documentActionsRoutes from './routes/document-actions.routes';
 import documentsRoutes from './routes/documents.routes';
 import edgarRoutes from './routes/edgar.routes';
 import healthRoutes from './routes/health.routes';
+import llmRoutes from './routes/llm.routes';
+import researchRoutes from './routes/research.routes';
 import testRoutes from './routes/test.routes';
 import { initWebSocketServer } from './websocket/ws.server';
 import { startCleanupWorker } from './workers/cleanup.worker';
@@ -85,6 +87,9 @@ async function bootstrap() {
 		'/api/collections/:collectionId/documents/:documentId/annotations',
 		annotationsRoutes
 	);
+
+	app.use('/llm', llmRoutes);
+	app.use('/api/research', researchRoutes);
 
 	// ── 404 + Error handlers (must be LAST) ───────────────────────
 	app.use(notFound);

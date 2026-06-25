@@ -104,7 +104,7 @@ export function computeRetrievalMetrics(
 
 export async function computePreFilterMetrics(
 	collectionId: string,
-	threshold: number
+	_threshold: number
 ): Promise<PreFilterMetrics> {
 	const { rows: docs } = await db.query(
 		`SELECT id FROM documents WHERE collection_id = $1 AND status = 'ready'`,

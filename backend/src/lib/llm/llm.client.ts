@@ -18,6 +18,7 @@ export interface LLMCallOptions {
 	messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
 	userId?: string;
 	promptVersionId?: string;
+	modelOverride?: string;
 	stream?: boolean;
 	maxTokens?: number;
 	temperature?: number;
@@ -50,7 +51,7 @@ async function sleep(ms: number) {
 
 export async function llmCall(opts: LLMCallOptions): Promise<FinSightResponse> {
 	const modelKey = TASK_MODEL_MAP[opts.task] ?? 'heavy';
-	const model = ModelConfig[modelKey];
+	const model = opts.modelOverride ?? ModelConfig[modelKey];
 	const startMs = Date.now();
 
 	let lastError: string | undefined;

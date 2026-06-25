@@ -6,7 +6,7 @@ import { llmCall } from '../lib/llm/llm.client';
 import { ModelConfig } from '../lib/llm/model.router';
 import { buildPrompt } from '../lib/llm/prompt.builder';
 import { logger } from '../lib/logger';
-import { computeF1, ContradictionMetrics, saveBenchmarkRun } from './benchmark.service';
+import { computeF1, saveBenchmarkRun } from './benchmark.service';
 
 const ContradictionsOutputSchema = z.object({
 	contradictions: z.array(z.object({
@@ -76,6 +76,7 @@ async function detectForPair(
 		messages: [{ role: 'user', content: body }],
 		userId,
 		promptVersionId,
+		modelOverride,
 		maxTokens: 2_048,
 		temperature: 0.1,
 	});
@@ -296,7 +297,7 @@ export async function runHallucinationBenchmark(userId: string): Promise<void> {
 	const f1PerModel: Record<string, number> = {};
 	let totalSamples = negativePairs.length;
 
-	for (const [modelLabel, modelKey] of [['heavy', 'heavy'], ['mid', 'mid'], ['fast', 'fast']] as const) {
+	for (const [_modelLabel, modelKey] of [['heavy', 'heavy'], ['mid', 'mid'], ['fast', 'fast']] as const) {
 		const model = ModelConfig[modelKey];
 		let hallucinationCount = 0;
 
