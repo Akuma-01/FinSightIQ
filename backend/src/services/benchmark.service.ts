@@ -31,12 +31,13 @@ export function computeF1(
 	groundTruth: { docAId: string; docBId: string; contradictionType: string }[],
 	detected: { docAId: string; docBId: string; contradictionType: string }[]
 ): ContradictionMetrics {
-	const gtSet = new Set(groundTruth.map(g => `${g.docAId}|${g.docBId}|${g.contradictionType}`));
-	const detSet = new Set(detected.map(d => `${d.docAId}|${d.docBId}|${d.contradictionType}`));
+	const makeKey = (a: string, b: string, type: string) => `${a}\0${b}\0${type}`;
+	const gtSet = new Set(groundTruth.map(g => makeKey(g.docAId, g.docBId, g.contradictionType)));
+	const detSet = new Set(detected.map(d => makeKey(d.docAId, d.docBId, d.contradictionType)));
 
 	const gtSymSet = new Set([
-		...groundTruth.map(g => `${g.docAId}|${g.docBId}|${g.contradictionType}`),
-		...groundTruth.map(g => `${g.docBId}|${g.docAId}|${g.contradictionType}`),
+		...groundTruth.map(g => makeKey(g.docAId, g.docBId, g.contradictionType)),
+		...groundTruth.map(g => makeKey(g.docBId, g.docAId, g.contradictionType)),
 	]);
 
 	let tp = 0, fp = 0, fn = 0;
@@ -46,8 +47,8 @@ export function computeF1(
 		else fp++;
 	}
 	for (const g of gtSet) {
-		const [a, b, t] = g.split('|');
-		if (!detSet.has(g) && !detSet.has(`${b}|${a}|${t}`)) fn++;
+		const [a, b, type] = g.split('\0');
+		if (!detSet.has(g) && !detSet.has(makeKey(b, a, type))) fn++;
 	}
 
 	const precision = tp + fp > 0 ? tp / (tp + fp) : 0;

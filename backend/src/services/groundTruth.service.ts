@@ -1,6 +1,7 @@
 // backend/src/services/groundTruth.service.ts
 
 import { z } from 'zod';
+import { config } from '../config';
 import { db } from '../db/pool';
 import { llmCall } from '../lib/llm/llm.client';
 import { ModelConfig } from '../lib/llm/model.router';
@@ -38,6 +39,26 @@ export async function loadGroundTruth(): Promise<GroundTruthPair[]> {
      FROM ground_truth_pairs ORDER BY imported_at`
 	);
 	return rows;
+}
+
+async function runPairsConcurrent<T>(
+	pairs: GroundTruthPair[],
+	concurrency: number,
+	fn: (pair: GroundTruthPair) => Promise<T>
+): Promise<T[]> {
+	const results: T[] = [];
+	for (let index = 0; index < pairs.length; index += concurrency) {
+		const batch = pairs.slice(index, index + concurrency);
+		const settled = await Promise.allSettled(batch.map(fn));
+		for (const result of settled) {
+			if (result.status === 'fulfilled') results.push(result.value);
+			else logger.warn({ err: result.reason }, 'Pair detection failed — skipping');
+		}
+		if (index + concurrency < pairs.length) {
+			await new Promise(resolve => setTimeout(resolve, 1_000));
+		}
+	}
+	return results;
 }
 
 async function detectForPair(
@@ -118,19 +139,30 @@ export async function runModelComparisonBenchmark(userId: string): Promise<void>
 	] as const) {
 		const model = ModelConfig[modelKey];
 		logger.info({ model, modelLabel }, 'Running benchmark for model');
+		const probe = await llmCall({
+			task: 'classify_severity',
+			messages: [{ role: 'user', content: 'Test probe. Reply: ok' }],
+			userId,
+			promptVersionId,
+			modelOverride: model,
+			maxTokens: 10,
+		});
+		if (probe.finishReason === 'error') {
+			logger.error({ model, error: probe.error }, 'Model probe failed — skipping benchmark model');
+			continue;
+		}
 
-		const detected: { docAId: string; docBId: string; contradictionType: string }[] = [];
-
-		for (const pair of pairs) {
+		const pairResults = await runPairsConcurrent(pairs, config.BENCHMARK_CONCURRENCY, async pair => {
 			const types = await detectForPair(
 				pair.docAId, pair.docBId,
 				pair.docAFilename, pair.docBFilename,
 				model, promptVersionId, userId
 			);
-			for (const t of types) {
-				detected.push({ docAId: pair.docAId, docBId: pair.docBId, contradictionType: t });
-			}
-		}
+			return types.map(contradictionType => ({
+				docAId: pair.docAId, docBId: pair.docBId, contradictionType,
+			}));
+		});
+		const detected = pairResults.flat();
 
 		const metrics = computeF1(groundTruthLabels, detected);
 
@@ -178,22 +210,24 @@ export async function runChunkingStrategyBenchmark(
 		);
 		const filenameToId = new Map(collDocs.map(d => [d.filename, d.id]));
 
-		const detected: { docAId: string; docBId: string; contradictionType: string }[] = [];
-
-		for (const pair of pairs) {
+		const eligiblePairs = pairs.filter(pair =>
+			filenameToId.has(pair.docAFilename) && filenameToId.has(pair.docBFilename)
+		);
+		const pairResults = await runPairsConcurrent(eligiblePairs, config.BENCHMARK_CONCURRENCY, async pair => {
 			const resolvedAId = filenameToId.get(pair.docAFilename);
 			const resolvedBId = filenameToId.get(pair.docBFilename);
-			if (!resolvedAId || !resolvedBId) continue;
+			if (!resolvedAId || !resolvedBId) return [];
 
 			const types = await detectForPair(
 				resolvedAId, resolvedBId,
 				pair.docAFilename, pair.docBFilename,
 				ModelConfig.heavy, promptVersionId, userId
 			);
-			for (const t of types) {
-				detected.push({ docAId: pair.docAId, docBId: pair.docBId, contradictionType: t });
-			}
-		}
+			return types.map(contradictionType => ({
+				docAId: pair.docAId, docBId: pair.docBId, contradictionType,
+			}));
+		});
+		const detected = pairResults.flat();
 
 		const metrics = computeF1(groundTruthLabels, detected);
 
@@ -237,18 +271,17 @@ export async function runPromptSensitivityBenchmark(userId: string): Promise<voi
 	for (const pv of allVersions) {
 		logger.info({ version: pv.version }, 'Running prompt sensitivity benchmark for version');
 
-		const detected: { docAId: string; docBId: string; contradictionType: string }[] = [];
-
-		for (const pair of pairs) {
+		const pairResults = await runPairsConcurrent(pairs, config.BENCHMARK_CONCURRENCY, async pair => {
 			const types = await detectForPair(
 				pair.docAId, pair.docBId,
 				pair.docAFilename, pair.docBFilename,
 				ModelConfig.heavy, pv.id, userId
 			);
-			for (const t of types) {
-				detected.push({ docAId: pair.docAId, docBId: pair.docBId, contradictionType: t });
-			}
-		}
+			return types.map(contradictionType => ({
+				docAId: pair.docAId, docBId: pair.docBId, contradictionType,
+			}));
+		});
+		const detected = pairResults.flat();
 
 		const metrics = computeF1(groundTruthLabels, detected);
 		f1ByVersion[`v${pv.version}`] = metrics.f1;
@@ -299,16 +332,15 @@ export async function runHallucinationBenchmark(userId: string): Promise<void> {
 
 	for (const [_modelLabel, modelKey] of [['heavy', 'heavy'], ['mid', 'mid'], ['fast', 'fast']] as const) {
 		const model = ModelConfig[modelKey];
-		let hallucinationCount = 0;
-
-		for (const pair of negativePairs) {
+		const detections = await runPairsConcurrent(negativePairs, config.BENCHMARK_CONCURRENCY, async pair => {
 			const types = await detectForPair(
 				pair.docAId, pair.docBId,
 				pair.docAFilename, pair.docBFilename,
 				model, promptVersionId, userId
 			);
-			if (types.length > 0) hallucinationCount++;
-		}
+			return types;
+		});
+		const hallucinationCount = detections.filter(types => types.length > 0).length;
 
 		const fpr = negativePairs.length > 0 ? hallucinationCount / negativePairs.length : 0;
 		f1PerModel[model] = Math.round((1 - fpr) * 10000) / 10000;

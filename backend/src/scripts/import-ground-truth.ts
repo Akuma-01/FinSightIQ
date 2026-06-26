@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import Papa from 'papaparse';
 import { config } from '../config';
 import { db } from '../db/pool';
@@ -8,6 +8,7 @@ import { redis } from '../redis/client';
 const INPUT_FILE = process.env.GROUND_TRUTH_FILE
 	?? `${config.GROUND_TRUTH_DIR}/labeled_pairs.csv`;
 const DRY_RUN = process.argv.includes('--dry-run');
+const MAX_CSV_SIZE_MB = 50;
 
 interface LabeledRow {
 	doc_a_filename: string;
@@ -23,6 +24,10 @@ interface LabeledRow {
 }
 
 async function main() {
+	const sizeMB = statSync(INPUT_FILE).size / (1024 * 1024);
+	if (sizeMB > MAX_CSV_SIZE_MB) {
+		throw new Error(`CSV file exceeds ${MAX_CSV_SIZE_MB}MB limit: ${INPUT_FILE}`);
+	}
 	const csv = readFileSync(INPUT_FILE, 'utf8');
 	const { data } = Papa.parse<LabeledRow>(csv, { header: true, skipEmptyLines: true });
 
@@ -55,9 +60,34 @@ async function main() {
       is_contradiction    BOOLEAN NOT NULL,
       labeler_note        TEXT,
       prompt_version_id   UUID REFERENCES prompt_templates(id),
-      imported_at         TIMESTAMPTZ DEFAULT NOW()
+		  imported_at         TIMESTAMPTZ DEFAULT NOW(),
+		  CONSTRAINT uq_ground_truth_pair
+			UNIQUE (doc_a_filename, doc_b_filename, is_contradiction)
     )
   `);
+
+	// Existing databases may have been initialized before the constraint was added.
+	// Keep the oldest row for each duplicate key so the migration can be applied safely.
+	await db.query(`
+		DELETE FROM ground_truth_pairs older
+		USING ground_truth_pairs newer
+		WHERE older.ctid < newer.ctid
+		  AND older.doc_a_filename = newer.doc_a_filename
+		  AND older.doc_b_filename = newer.doc_b_filename
+		  AND older.is_contradiction = newer.is_contradiction
+	`);
+	await db.query(`
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'uq_ground_truth_pair'
+			) THEN
+				ALTER TABLE ground_truth_pairs
+					ADD CONSTRAINT uq_ground_truth_pair
+					UNIQUE (doc_a_filename, doc_b_filename, is_contradiction);
+			END IF;
+		END $$;
+	`);
 
 	const { rows: docs } = await db.query(
 		'SELECT id, filename FROM documents WHERE status = $1',
@@ -86,13 +116,13 @@ async function main() {
 			continue;
 		}
 
-		await db.query(
+		const result = await db.query(
 			`INSERT INTO ground_truth_pairs
          (doc_a_filename, doc_b_filename, doc_a_id, doc_b_id,
           contradiction_type, severity, claim_a_snippet, claim_b_snippet,
           section_a, section_b, is_contradiction, labeler_note, prompt_version_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT DO NOTHING`,
+			ON CONFLICT ON CONSTRAINT uq_ground_truth_pair DO NOTHING`,
 			[
 				row.doc_a_filename, row.doc_b_filename, docAId, docBId,
 				row.contradiction_type || null,
@@ -106,7 +136,11 @@ async function main() {
 				promptVersionId,
 			]
 		);
-		imported++;
+		if (result.rowCount) imported++;
+		else {
+			skipped++;
+			logger.debug({ a: row.doc_a_filename, b: row.doc_b_filename }, 'Duplicate ground-truth row skipped');
+		}
 	}
 
 	logger.info({ imported, skipped }, 'Ground truth import complete');

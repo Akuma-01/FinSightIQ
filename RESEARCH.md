@@ -74,5 +74,29 @@ schema level: `benchmark_runs.prompt_version_id` is a direct FK column.
 
 ---
 
+## 8. Ground-Truth Labeling Safety
+
+Generate candidate pairs once, label `ground-truth/candidate_pairs.csv`, then
+import the completed file:
+
+```bash
+cd backend
+npm run label:pairs
+npm run import:ground-truth
+```
+
+`npm run label:pairs` refuses to overwrite an existing candidate CSV. Use the
+following command only when intentionally discarding that file and regenerating
+it from the current collection:
+
+```bash
+npm run label:pairs:regenerate
+```
+
+Imports are idempotent: the database keeps one row for each document pair and
+label polarity. CSV files above 50 MB are rejected before parsing.
+
+---
+
 *Sections 8–12 (results, analysis, conclusions) to be completed in Phase 4
 once benchmark data has been collected and validated.*

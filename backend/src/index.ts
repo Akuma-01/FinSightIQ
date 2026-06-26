@@ -31,6 +31,7 @@ import { startCleanupWorker } from './workers/cleanup.worker';
 import { startEdgarWorker } from './workers/edgar.worker';
 import { startIngestWorker } from './workers/ingest.worker';
 import { startScanWorker } from './workers/scan.worker';
+import { startBenchmarkWorker } from './workers/benchmark.worker';
 
 // ── Process-level safety net ────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
@@ -104,6 +105,7 @@ async function bootstrap() {
 	startIngestWorker();
 	startEdgarWorker();
 	startScanWorker();
+	startBenchmarkWorker();
 	await scheduleCleanupJob();
 
 	// ── Listen ───────────────────────────────────────────────────

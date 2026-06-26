@@ -6,6 +6,7 @@ import { getCleanupWorkerStatus } from '../workers/cleanup.worker';
 import { getEdgarWorkerStatus } from '../workers/edgar.worker';
 import { getIngestWorkerStatus } from '../workers/ingest.worker';
 import { getScanWorkerStatus } from '../workers/scan.worker';
+import { getBenchmarkWorkerStatus } from '../workers/benchmark.worker';
 
 const router = Router();
 
@@ -34,6 +35,7 @@ router.get('/health', async (_req: Request, res: Response) => {
 		ingest_worker: getIngestWorkerStatus(),
 		edgar_worker: getEdgarWorkerStatus(),
 		scan_worker: getScanWorkerStatus(),
+		benchmark_worker: getBenchmarkWorkerStatus(),
 		ws_connections: getWsConnectionCount(),
 	});
 });

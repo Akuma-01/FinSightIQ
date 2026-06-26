@@ -61,9 +61,15 @@ const EnvSchema = z.object({
 	CONTRADICTION_TOP_CHUNKS: z.coerce.number().int().min(1).max(10).default(5),
 
 	// Research / benchmarking
-	GROUND_TRUTH_DIR: z.string().default('./ground-truth'),
+	GROUND_TRUTH_DIR: z.string().default('./ground-truth').refine(
+		(path) => !path.includes('..') && !path.startsWith('/'),
+		{ message: 'GROUND_TRUTH_DIR must be a relative path with no .. traversal' }
+	),
 	BENCHMARK_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(2),
-	EXPORT_DIR: z.string().default('./exports'),
+	EXPORT_DIR: z.string().default('./exports').refine(
+		(path) => !path.includes('..') && !path.startsWith('/'),
+		{ message: 'EXPORT_DIR must be a relative path with no .. traversal' }
+	),
 
 	// BM25 / full-text
 	KEYWORD_TRIGGER_TERMS: z.string().default(

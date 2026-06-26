@@ -2,28 +2,42 @@ import { stringify as csvStringify } from 'csv-stringify';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../db/pool';
-import { logger } from '../lib/logger';
 import { AppError, asyncHandler } from '../middleware/error.middleware';
-import * as GroundTruthService from '../services/groundTruth.service';
+import { BenchmarkType, benchmarkQueue } from '../queue/benchmark.queue';
+import { redis } from '../redis/client';
+
+const VALID_STRATEGIES = ['fixed_256', 'fixed_512', 'sentence', 'section_aware'] as const;
+const BENCHMARK_TYPES = ['chunking_strategy', 'model_comparison', 'hallucination', 'prompt_sensitivity'] as const;
 
 export const getMetrics = asyncHandler(async (_req: Request, res: Response) => {
 
-	const { rows: runs } = await db.query(
-		`SELECT benchmark_type, metrics, parameters, total_samples, created_at,
-            prompt_version_id
-     FROM benchmark_runs ORDER BY created_at DESC`
+	const { rows: f1Rows } = await db.query(
+		`SELECT DISTINCT ON (metrics->>'model')
+            metrics->>'model' AS model,
+            (metrics->>'f1')::float AS f1,
+            created_at
+     FROM benchmark_runs
+     WHERE benchmark_type = 'model_comparison'
+       AND metrics->>'model' IS NOT NULL
+     ORDER BY metrics->>'model', created_at DESC`
 	);
-
-	// Latest F1 per model(from model comparison runs)
-	const modelRuns = runs.filter(r => r.benchmark_type === 'model_comparison');
 	const latestF1: Record<string, number> = {};
-	for (const run of modelRuns) {
-		const model = (run.metrics as any).model;
-		if (model && !latestF1[model]) latestF1[model] = (run.metrics as any).f1;
+	for (const row of f1Rows) {
+		latestF1[row.model] = Number(row.f1);
 	}
 
-	// Latest Precision@k (from chunkingstrategy runs)
-	const chunkRuns = runs.filter(r => r.benchmark_type === 'chunking_strategy');
+	const [{ rows: countRows }, { rows: chunkRows }] = await Promise.all([
+		db.query('SELECT COUNT(*) AS total FROM benchmark_runs'),
+		db.query(
+			`SELECT DISTINCT ON (parameters->>'strategy')
+              parameters->>'strategy' AS strategy,
+              (metrics->>'f1')::float AS f1,
+              created_at
+       FROM benchmark_runs
+       WHERE benchmark_type = 'chunking_strategy'
+       ORDER BY parameters->>'strategy', created_at DESC`
+		),
+	]);
 
 	const { rows: logStats } = await db.query(
 		`SELECT task, model,
@@ -39,13 +53,9 @@ export const getMetrics = asyncHandler(async (_req: Request, res: Response) => {
 
 	res.json({
 		latestF1ByModel: latestF1,
-		benchmarkRunCount: runs.length,
+		benchmarkRunCount: Number(countRows[0].total),
 		recentLogStats: logStats,
-		chunkingResults: chunkRuns.map(r => ({
-			strategy: (r.parameters as any).strategy,
-			f1: (r.metrics as any).f1,
-			date: r.created_at,
-		})),
+		chunkingResults: chunkRows,
 	});
 });
 
@@ -60,47 +70,54 @@ export const getHallucination = asyncHandler(async (_req: Request, res: Response
 
 export const runBenchmark = asyncHandler(async (req: Request, res: Response) => {
 	const schema = z.object({
-		benchmarkType: z.enum(['chunking_strategy', 'model_comparison', 'hallucination', 'prompt_sensitivity']),
+		benchmarkType: z.enum(BENCHMARK_TYPES),
 		// For chunking_strategy benchmark only:
-		collectionIds: z.record(z.string(), z.string().uuid()).optional(),
-		notes: z.string().optional(),
+		collectionIds: z.partialRecord(z.enum(VALID_STRATEGIES), z.string().uuid()).optional(),
+		notes: z.string().max(500).optional(),
 	});
 	const parsed = schema.safeParse(req.body);
 	if (!parsed.success) throw new AppError(400, parsed.error.message);
 
 	const { benchmarkType, collectionIds } = parsed.data;
-
-
-	res.status(202).json({
-		message: `Benchmark '${benchmarkType}' started — check GET /api/research/benchmark/history for results`,
-		benchmarkType,
-	});
-
-	setImmediate(async () => {
-		try {
-			switch (benchmarkType) {
-				case 'model_comparison':
-					await GroundTruthService.runModelComparisonBenchmark(req.user!.id);
-					break;
-				case 'chunking_strategy':
-					if (!collectionIds || Object.keys(collectionIds).length === 0) {
-						logger.error('chunking_strategy benchmark requires collectionIds map');
-						return;
-					}
-					await GroundTruthService.runChunkingStrategyBenchmark(collectionIds, req.user!.id);
-					break;
-				case 'hallucination':
-					await GroundTruthService.runHallucinationBenchmark(req.user!.id);
-					break;
-				case 'prompt_sensitivity':
-					await GroundTruthService.runPromptSensitivityBenchmark(req.user!.id);
-					break;
-			}
-			logger.info({ benchmarkType }, 'Benchmark run complete');
-		} catch (err) {
-			logger.error({ err, benchmarkType }, 'Benchmark run failed');
+	if (benchmarkType === 'chunking_strategy') {
+		const ids = Object.values(collectionIds ?? {});
+		if (ids.length === 0) {
+			throw new AppError(400, 'chunking_strategy benchmark requires at least one collectionId');
 		}
-	});
+		if (req.user!.role !== 'admin') {
+			const { rows } = await db.query<{ collection_id: string }>(
+				`SELECT collection_id FROM collection_members
+         WHERE user_id = $1 AND collection_id = ANY($2::uuid[])`,
+				[req.user!.id, ids]
+			);
+			const accessibleIds = new Set(rows.map(row => row.collection_id));
+			const forbidden = ids.filter(id => !accessibleIds.has(id));
+			if (forbidden.length) {
+				throw new AppError(403, `Not a member of collection(s): ${forbidden.join(', ')}`);
+			}
+		}
+	}
+
+	const lockKey = `benchmark:lock:${benchmarkType}`;
+	const acquired = await redis.set(lockKey, req.user!.id, 'EX', 60 * 60 * 2, 'NX');
+	if (!acquired) throw new AppError(409, `A ${benchmarkType} benchmark is already running`);
+
+	try {
+		const job = await benchmarkQueue.add('run', {
+			benchmarkType: benchmarkType as BenchmarkType,
+			userId: req.user!.id,
+			collectionIds,
+			notes: parsed.data.notes,
+		});
+		res.status(202).json({
+			jobId: job.id,
+			message: `${benchmarkType} benchmark queued — check GET /api/research/benchmark/history for results`,
+		});
+	} catch (err) {
+		await redis.del(lockKey);
+		throw err;
+	}
+
 });
 
 export const getBenchmarkHistory = asyncHandler(async (req: Request, res: Response) => {
@@ -138,8 +155,9 @@ export const getBenchmarkHistory = asyncHandler(async (req: Request, res: Respon
 export const exportData = asyncHandler(async (req: Request, res: Response) => {
 	const schema = z.object({
 		format: z.enum(['csv', 'json']).default('json'),
-		benchmarkType: z.enum(['chunking_strategy', 'model_comparison', 'hallucination', 'prompt_sensitivity']).optional(),
+		benchmarkType: z.enum(BENCHMARK_TYPES).optional(),
 		includeRaw: z.enum(['true', 'false']).default('false'),
+		limit: z.coerce.number().int().min(1).max(10_000).default(1_000),
 	});
 	const q = schema.safeParse(req.query);
 	if (!q.success) throw new AppError(400, q.error.message);
@@ -150,12 +168,12 @@ export const exportData = asyncHandler(async (req: Request, res: Response) => {
 			? `SELECT br.*, pt.version, pt.task
          FROM benchmark_runs br
          LEFT JOIN prompt_templates pt ON pt.id = br.prompt_version_id
-         WHERE br.benchmark_type = $1 ORDER BY br.created_at`
+         WHERE br.benchmark_type = $1 ORDER BY br.created_at DESC LIMIT $2`
 			: `SELECT br.*, pt.version, pt.task
          FROM benchmark_runs br
          LEFT JOIN prompt_templates pt ON pt.id = br.prompt_version_id
-         ORDER BY br.created_at`,
-		q.data.benchmarkType ? [q.data.benchmarkType] : []
+		 ORDER BY br.created_at DESC LIMIT $1`,
+		q.data.benchmarkType ? [q.data.benchmarkType, q.data.limit] : [q.data.limit]
 	);
 
 	let llmLogs: unknown[] = [];
@@ -163,7 +181,7 @@ export const exportData = asyncHandler(async (req: Request, res: Response) => {
 		const { rows: logs } = await db.query(
 			`SELECT task, model, prompt_version_id, prompt_tokens, completion_tokens,
               latency_ms, finish_reason, created_at
-       FROM llm_logs ORDER BY created_at`
+	       FROM llm_logs ORDER BY created_at DESC LIMIT 5000`
 		);
 		llmLogs = logs;
 	}
@@ -171,14 +189,19 @@ export const exportData = asyncHandler(async (req: Request, res: Response) => {
 	const { rows: gtPairs } = await db.query(
 		`SELECT doc_a_filename, doc_b_filename, contradiction_type,
             severity, is_contradiction, labeler_note, imported_at
-     FROM ground_truth_pairs ORDER BY imported_at`
-	).catch(() => ({ rows: [] }));
+     FROM ground_truth_pairs ORDER BY imported_at DESC LIMIT $1`,
+		[q.data.limit]
+	).catch(() => ({ rows: [] as unknown[] }));
 
 	const exportPayload = {
 		exportedAt: new Date().toISOString(),
+		rowCap: q.data.limit,
 		benchmarkRuns: runs,
+		benchmarkRunCount: runs.length,
 		groundTruthPairs: gtPairs,
+		groundTruthPairsCapped: gtPairs.length === q.data.limit,
 		llmLogs: q.data.includeRaw === 'true' ? llmLogs : 'omitted (use ?includeRaw=true)',
+		llmLogsCapped: q.data.includeRaw === 'true' && llmLogs.length === 5_000,
 		note: 'Dataset size limitation applies — see RESEARCH.md §6 before generalizing results.',
 	};
 

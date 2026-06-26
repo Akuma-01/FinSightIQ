@@ -1,5 +1,5 @@
 import { stringify } from 'csv-stringify';
-import { createWriteStream, mkdirSync } from 'fs';
+import { createWriteStream, existsSync, mkdirSync } from 'fs';
 import { config } from '../config';
 import { db } from '../db/pool';
 import { logger } from '../lib/logger';
@@ -11,6 +11,11 @@ const OUTPUT_FILE = `${config.GROUND_TRUTH_DIR}/candidate_pairs.csv`;
 
 async function main() {
 	mkdirSync(config.GROUND_TRUTH_DIR, { recursive: true });
+	if (existsSync(OUTPUT_FILE) && !process.argv.includes('--overwrite')) {
+		throw new Error(
+			`Output file already exists: ${OUTPUT_FILE}. To discard existing labels and regenerate it, run npm run label:pairs:regenerate.`
+		);
+	}
 
 	const { rows: docs } = await db.query(
 		`SELECT id, filename, doc_type, source, effective_date

@@ -323,6 +323,46 @@ CREATE INDEX IF NOT EXISTS idx_benchmark_runs_type            ON benchmark_runs(
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_date            ON benchmark_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_prompt_version  ON benchmark_runs(prompt_version_id);
 
+-- Ground-truth labels used by the Phase 4 benchmark runners.
+CREATE TABLE IF NOT EXISTS ground_truth_pairs (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  doc_a_filename      TEXT NOT NULL,
+  doc_b_filename      TEXT NOT NULL,
+  doc_a_id            UUID REFERENCES documents(id),
+  doc_b_id            UUID REFERENCES documents(id),
+  contradiction_type  TEXT,
+  severity            TEXT,
+  claim_a_snippet     TEXT,
+  claim_b_snippet     TEXT,
+  section_a           TEXT,
+  section_b           TEXT,
+  is_contradiction    BOOLEAN NOT NULL,
+  labeler_note        TEXT,
+  prompt_version_id   UUID REFERENCES prompt_templates(id),
+  imported_at         TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uq_ground_truth_pair
+    UNIQUE (doc_a_filename, doc_b_filename, is_contradiction)
+);
+
+-- Upgrade databases created before the uniqueness constraint was introduced.
+DELETE FROM ground_truth_pairs older
+USING ground_truth_pairs newer
+WHERE older.ctid < newer.ctid
+  AND older.doc_a_filename = newer.doc_a_filename
+  AND older.doc_b_filename = newer.doc_b_filename
+  AND older.is_contradiction = newer.is_contradiction;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_ground_truth_pair'
+  ) THEN
+    ALTER TABLE ground_truth_pairs
+      ADD CONSTRAINT uq_ground_truth_pair
+      UNIQUE (doc_a_filename, doc_b_filename, is_contradiction);
+  END IF;
+END $$;
+
 DO $$
 BEGIN
   ALTER TABLE collection_members DROP CONSTRAINT IF EXISTS collection_members_access_role_check;
