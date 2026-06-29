@@ -17,6 +17,13 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 	res.json({ documents });
 });
 
+export const getOne = asyncHandler(async (req: Request, res: Response) => {
+	const collectionId = getUuidParam(req, 'collectionId');
+	const documentId = getUuidParam(req, 'documentId');
+	const document = await DocumentsService.getDocumentInCollection(documentId, collectionId);
+	res.json({ document });
+});
+
 // Upload is a two-middleware chain: multer → handler
 // multer errors (size, type) propagate to global error handler via next(err)
 export const uploadOne = [

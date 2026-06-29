@@ -109,6 +109,18 @@ export async function getDocument(documentId: string) {
 	return rows[0];
 }
 
+export async function getDocumentInCollection(documentId: string, collectionId: string) {
+	const { rows } = await db.query(
+		`SELECT id, collection_id, filename, original_name, mime_type, size_bytes,
+		        status, doc_type, source, effective_date, created_at, raw_text
+		   FROM documents
+		  WHERE id = $1 AND collection_id = $2`,
+		[documentId, collectionId]
+	);
+	if (!rows[0]) throw new AppError(404, 'Document not found in this collection');
+	return rows[0];
+}
+
 export async function deleteDocument(documentId: string) {
 	const { rows } = await db.query(
 		'DELETE FROM documents WHERE id = $1 RETURNING storage_key',

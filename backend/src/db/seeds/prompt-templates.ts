@@ -22,19 +22,28 @@ Contradiction types:
 - stale_reference: document references a superseded regulatory version
 - definitional_conflict: same term defined differently across documents
 
-If contradictions exist, respond with a JSON array. Each item:
+Return ONLY one valid JSON object. Do not use markdown fences. Do not explain outside JSON.
+Return at most 3 contradictions. Only include contradictions supported by quoted text from both documents.
+If no contradictions exist, return exactly:
 {
-  "contradiction_type": "<type>",
-  "severity": "critical" | "moderate" | "minor",
-  "claim_a": "<exact text from Document A>",
-  "claim_b": "<exact text from Document B>",
-  "section_a": "<section label in Document A, or null>",
-  "section_b": "<section label in Document B, or null>",
-  "explanation": "<1-2 sentences explaining the contradiction>"
+  "contradictions": []
 }
 
-If no contradictions, respond with: []
-Valid JSON only. No preamble.`,
+If contradictions exist, return this exact object shape:
+{
+  "contradictions": [
+    {
+      "contradiction_type": "<type>",
+      "severity": "critical" | "moderate" | "minor",
+      "claim_a": "<exact text from Document A>",
+      "claim_b": "<exact text from Document B>",
+      "section_a": "<section label in Document A, or null>",
+      "section_b": "<section label in Document B, or null>",
+      "explanation": "<1-2 sentences explaining the contradiction>"
+    }
+  ]
+}
+Valid JSON object only. No preamble.`,
 	},
 	{
 		task: 'summarize_document',

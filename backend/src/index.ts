@@ -27,11 +27,11 @@ import llmRoutes from './routes/llm.routes';
 import researchRoutes from './routes/research.routes';
 import testRoutes from './routes/test.routes';
 import { initWebSocketServer } from './websocket/ws.server';
+import { startBenchmarkWorker } from './workers/benchmark.worker';
 import { startCleanupWorker } from './workers/cleanup.worker';
 import { startEdgarWorker } from './workers/edgar.worker';
 import { startIngestWorker } from './workers/ingest.worker';
 import { startScanWorker } from './workers/scan.worker';
-import { startBenchmarkWorker } from './workers/benchmark.worker';
 
 // ── Process-level safety net ────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
@@ -45,7 +45,7 @@ process.on('uncaughtException', (err) => {
 });
 
 async function bootstrap() {
-	mkdir(config.UPLOAD_DIR, { recursive: true });
+	await mkdir(config.UPLOAD_DIR, { recursive: true });
 
 	const app = express();
 

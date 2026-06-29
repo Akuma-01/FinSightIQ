@@ -46,7 +46,11 @@ const EnvSchema = z.object({
 	GROQ_MODEL_MID: z.string().default('mixtral-8x7b-32768'),
 	GROQ_MODEL_FAST: z.string().default('llama-3.1-8b-instant'),
 	EMBEDDING_PROVIDER: z.enum(['groq', 'huggingface', 'ollama']).default('ollama'),
+	LLM_PROVIDER: z.enum(['groq', 'ollama']).default('groq'),
 	OLLAMA_BASE_URL: z.url().default('http://localhost:11434'),
+	OLLAMA_MODEL_HEAVY: z.string().default('llama3.2:3b'),
+	OLLAMA_MODEL_MID: z.string().default('llama3.2:3b'),
+	OLLAMA_MODEL_FAST: z.string().default('llama3.2:3b'),
 	HUGGINGFACE_API_KEY: z.string().optional(),
 
 	RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
@@ -65,7 +69,7 @@ const EnvSchema = z.object({
 		(path) => !path.includes('..') && !path.startsWith('/'),
 		{ message: 'GROUND_TRUTH_DIR must be a relative path with no .. traversal' }
 	),
-	BENCHMARK_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(2),
+	BENCHMARK_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(1),
 	EXPORT_DIR: z.string().default('./exports').refine(
 		(path) => !path.includes('..') && !path.startsWith('/'),
 		{ message: 'EXPORT_DIR must be a relative path with no .. traversal' }

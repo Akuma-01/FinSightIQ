@@ -40,11 +40,14 @@ services:
     environment:
       DATABASE_URL: postgresql://finsight:finsight@postgres:5432/finsightiq
       REDIS_URL: redis://redis:6379
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
       - /app/node_modules

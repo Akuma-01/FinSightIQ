@@ -2,9 +2,9 @@ import { config } from '../../config';
 
 
 export const ModelConfig = {
-	heavy: config.GROQ_MODEL_HEAVY,
-	mid: config.GROQ_MODEL_MID,
-	fast: config.GROQ_MODEL_FAST,
+	heavy: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_MODEL_HEAVY : config.GROQ_MODEL_HEAVY,
+	mid: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_MODEL_MID : config.GROQ_MODEL_MID,
+	fast: config.LLM_PROVIDER === 'ollama' ? config.OLLAMA_MODEL_FAST : config.GROQ_MODEL_FAST,
 } as const;
 
 export type ModelKey = keyof typeof ModelConfig;

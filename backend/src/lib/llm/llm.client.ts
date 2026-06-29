@@ -28,7 +28,7 @@ export interface FinSightResponse {
 	model: string;
 	task: FinSightTask;
 	content: string;
-	structured?: Record<string, unknown>;
+	structured?: unknown;
 	promptVersionId: string;
 	tokensUsed: { prompt: number; completion: number; total: number };
 	latencyMs: number;
@@ -45,6 +45,11 @@ const groq = axios.create({
 	timeout: 120_000,
 });
 
+const ollama = axios.create({
+	baseURL: config.OLLAMA_BASE_URL,
+	timeout: 180_000,
+});
+
 async function sleep(ms: number) {
 	return new Promise(r => setTimeout(r, ms));
 }
@@ -59,38 +64,15 @@ export async function llmCall(opts: LLMCallOptions): Promise<FinSightResponse> {
 
 	while (attempt < config.LLM_MAX_RETRIES) {
 		try {
-			const { data } = await groq.post('/chat/completions', {
-				model,
-				messages: opts.messages,
-				max_tokens: opts.maxTokens ?? 1_024,
-				temperature: opts.temperature ?? 0.1,
-				stream: false,
-			});
-
-			const choice = data.choices[0];
-			const content = choice.message.content as string;
-			const latency = Date.now() - startMs;
-
-			const response: FinSightResponse = {
-				model,
-				task: opts.task,
-				content,
-				promptVersionId: opts.promptVersionId ?? '',
-				tokensUsed: {
-					prompt: data.usage.prompt_tokens,
-					completion: data.usage.completion_tokens,
-					total: data.usage.total_tokens,
-				},
-				latencyMs: latency,
-				finishReason: choice.finish_reason === 'stop' ? 'stop' : 'length',
-			};
+			const response = config.LLM_PROVIDER === 'ollama'
+				? await callOllama(opts, model, startMs)
+				: await callGroq(opts, model, startMs);
 
 			// Try to parse JSON for structured tasks
 			if (isStructuredTask(opts.task)) {
-				try {
-					response.structured = JSON.parse(content);
-				} catch {
-					logger.warn({ task: opts.task, contentSnippet: content.slice(0, 200) },
+				response.structured = parseStructuredContent(response.content);
+				if (response.structured === undefined) {
+					logger.warn({ task: opts.task, contentSnippet: response.content.slice(0, 200) },
 						'LLM returned non-JSON for structured task');
 				}
 			}
@@ -129,8 +111,112 @@ export async function llmCall(opts: LLMCallOptions): Promise<FinSightResponse> {
 	return errorResponse;
 }
 
+async function callGroq(
+	opts: LLMCallOptions,
+	model: string,
+	startMs: number
+): Promise<FinSightResponse> {
+	const { data } = await groq.post('/chat/completions', {
+		model,
+		messages: opts.messages,
+		max_tokens: opts.maxTokens ?? 1_024,
+		temperature: opts.temperature ?? 0.1,
+		stream: false,
+	});
+
+	const choice = data.choices[0];
+	const content = choice.message.content as string;
+
+	return {
+		model,
+		task: opts.task,
+		content,
+		promptVersionId: opts.promptVersionId ?? '',
+		tokensUsed: {
+			prompt: data.usage.prompt_tokens,
+			completion: data.usage.completion_tokens,
+			total: data.usage.total_tokens,
+		},
+		latencyMs: Date.now() - startMs,
+		finishReason: choice.finish_reason === 'stop' ? 'stop' : 'length',
+	};
+}
+
+async function callOllama(
+	opts: LLMCallOptions,
+	model: string,
+	startMs: number
+): Promise<FinSightResponse> {
+	const { data } = await ollama.post('/api/chat', {
+		model,
+		messages: opts.messages,
+		stream: false,
+		format: isStructuredTask(opts.task) ? 'json' : undefined,
+		options: {
+			temperature: opts.temperature ?? 0.1,
+			num_predict: opts.maxTokens ?? 1_024,
+		},
+	});
+
+	const content = data.message?.content as string ?? '';
+	const prompt = Number(data.prompt_eval_count ?? 0);
+	const completion = Number(data.eval_count ?? 0);
+
+	return {
+		model,
+		task: opts.task,
+		content,
+		promptVersionId: opts.promptVersionId ?? '',
+		tokensUsed: {
+			prompt,
+			completion,
+			total: prompt + completion,
+		},
+		latencyMs: Date.now() - startMs,
+		finishReason: data.done_reason === 'length' ? 'length' : 'stop',
+	};
+}
+
 function isStructuredTask(task: FinSightTask): boolean {
 	return ['detect_contradictions_financial', 'extract_references', 'stale_check'].includes(task);
+}
+
+function parseStructuredContent(content: string): unknown {
+	const candidates = buildJsonCandidates(content);
+
+	for (const candidate of candidates) {
+		try {
+			return JSON.parse(candidate);
+		} catch {
+			// Try next candidate.
+		}
+	}
+
+	return undefined;
+}
+
+function buildJsonCandidates(content: string): string[] {
+	const trimmed = content.trim();
+	const withoutFence = trimmed
+		.replace(/^```(?:json)?\s*/i, '')
+		.replace(/\s*```$/i, '')
+		.trim();
+
+	const candidates = new Set<string>([trimmed, withoutFence]);
+
+	const objectStart = withoutFence.indexOf('{');
+	const objectEnd = withoutFence.lastIndexOf('}');
+	if (objectStart >= 0 && objectEnd > objectStart) {
+		candidates.add(withoutFence.slice(objectStart, objectEnd + 1));
+	}
+
+	const arrayStart = withoutFence.indexOf('[');
+	const arrayEnd = withoutFence.lastIndexOf(']');
+	if (arrayStart >= 0 && arrayEnd > arrayStart) {
+		candidates.add(withoutFence.slice(arrayStart, arrayEnd + 1));
+	}
+
+	return [...candidates].filter(Boolean);
 }
 
 async function logLLMCall(

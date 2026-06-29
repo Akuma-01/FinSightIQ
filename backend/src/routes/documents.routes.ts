@@ -9,6 +9,7 @@ const router = Router({ mergeParams: true }); // inherits :collectionId from par
 router.use(verifyJWT, requireCollectionMember);
 
 router.get('/', Documents.list);
+router.get('/:documentId', Documents.getOne);
 router.post('/', canUpload, Documents.uploadOne);
 router.delete('/:documentId', adminOnly, Documents.remove);
 router.post('/:documentId/retry', adminOnly, Documents.retry);

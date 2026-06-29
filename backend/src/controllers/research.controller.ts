@@ -99,8 +99,33 @@ export const runBenchmark = asyncHandler(async (req: Request, res: Response) => 
 	}
 
 	const lockKey = `benchmark:lock:${benchmarkType}`;
-	const acquired = await redis.set(lockKey, req.user!.id, 'EX', 60 * 60 * 2, 'NX');
-	if (!acquired) throw new AppError(409, `A ${benchmarkType} benchmark is already running`);
+	let acquired = await redis.call('SET', lockKey, req.user!.id, 'EX', 60 * 60 * 2, 'NX');
+	if (!acquired) {
+		const existingLockOwner = await redis.get(lockKey);
+		if (existingLockOwner) {
+			const [activeJobs, waitingJobs, delayedJobs] = await Promise.all([
+				benchmarkQueue.getActiveCount(),
+				benchmarkQueue.getWaitingCount(),
+				benchmarkQueue.getDelayedCount(),
+			]);
+			if (activeJobs + waitingJobs + delayedJobs > 0) {
+				throw new AppError(409, `A ${benchmarkType} benchmark is already running (${activeJobs} active, ${waitingJobs} waiting, ${delayedJobs} delayed)`);
+			}
+
+			await redis.del(lockKey);
+			acquired = await redis.call('SET', lockKey, req.user!.id, 'EX', 60 * 60 * 2, 'NX');
+		}
+
+		// Defensive retry: if SET NX returned a falsy value but the key is absent,
+		// avoid leaving benchmark submission blocked by an inconsistent client state.
+		acquired = await redis.call('SET', lockKey, req.user!.id, 'EX', 60 * 60 * 2, 'NX');
+		if (!acquired) {
+			const lockOwnerAfterRetry = await redis.get(lockKey);
+			if (lockOwnerAfterRetry && lockOwnerAfterRetry !== req.user!.id) {
+				throw new AppError(409, `A ${benchmarkType} benchmark is already running (lock still present after stale-lock retry)`);
+			}
+		}
+	}
 
 	try {
 		const job = await benchmarkQueue.add('run', {

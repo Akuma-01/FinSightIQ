@@ -62,7 +62,7 @@ async function main() {
       prompt_version_id   UUID REFERENCES prompt_templates(id),
 		  imported_at         TIMESTAMPTZ DEFAULT NOW(),
 		  CONSTRAINT uq_ground_truth_pair
-			UNIQUE (doc_a_filename, doc_b_filename, is_contradiction)
+			UNIQUE (doc_a_filename, doc_b_filename, contradiction_type, section_a, section_b, is_contradiction)
     )
   `);
 
@@ -74,17 +74,30 @@ async function main() {
 		WHERE older.ctid < newer.ctid
 		  AND older.doc_a_filename = newer.doc_a_filename
 		  AND older.doc_b_filename = newer.doc_b_filename
+		  AND older.contradiction_type IS NOT DISTINCT FROM newer.contradiction_type
+		  AND older.section_a IS NOT DISTINCT FROM newer.section_a
+		  AND older.section_b IS NOT DISTINCT FROM newer.section_b
 		  AND older.is_contradiction = newer.is_contradiction
 	`);
 	await db.query(`
 		DO $$
 		BEGIN
+			IF EXISTS (
+				SELECT 1
+				FROM pg_constraint
+				WHERE conname = 'uq_ground_truth_pair'
+				  AND conrelid = 'ground_truth_pairs'::regclass
+				  AND pg_get_constraintdef(oid) NOT LIKE '%contradiction_type%'
+			) THEN
+				ALTER TABLE ground_truth_pairs DROP CONSTRAINT uq_ground_truth_pair;
+			END IF;
+
 			IF NOT EXISTS (
 				SELECT 1 FROM pg_constraint WHERE conname = 'uq_ground_truth_pair'
 			) THEN
 				ALTER TABLE ground_truth_pairs
 					ADD CONSTRAINT uq_ground_truth_pair
-					UNIQUE (doc_a_filename, doc_b_filename, is_contradiction);
+					UNIQUE (doc_a_filename, doc_b_filename, contradiction_type, section_a, section_b, is_contradiction);
 			END IF;
 		END $$;
 	`);
