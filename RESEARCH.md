@@ -238,6 +238,129 @@ Parameters:
 }
 ```
 
+### 8.1 Small Groq Strong-Model Subset Run
+
+After adding JSON repair/retry and richer reliability metrics, two small
+Groq-backed validation runs were executed. These were intentionally small to
+avoid free-tier rate-limit instability.
+
+Benchmark run:
+
+```txt
+benchmark_run_id: 3671f67e-efb9-43a4-b1bf-c795efe0f690
+benchmark_type:   model_comparison
+created_at:       2026-06-29 13:11:19 UTC
+```
+
+Runtime configuration:
+
+| Field | Value |
+|---|---|
+| LLM provider | Groq |
+| Model | `llama-3.3-70b-versatile` |
+| Benchmark concurrency | 1 |
+| Pair subset limit | 20 |
+| Evaluated pairs | 20 |
+| Positive rows in subset | 14 |
+
+Metrics:
+
+| F1 | Precision | Recall | TP | FP | FN |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 0 | 0 | 0 | 0 | 3 |
+
+Reliability metrics:
+
+| Field | Value |
+|---|---:|
+| Failed pair count | 0 |
+| Failed pair rate | 0 |
+| Invalid structured response count | 0 |
+| Invalid structured response rate | 0 |
+| JSON repair attempts | 0 |
+| JSON repair successes | 0 |
+| Total tokens | 5,000 |
+| Average latency | 1,928 ms |
+
+Interpretation:
+
+This run shows a different failure mode from the local Ollama baseline. The
+Groq model followed the structured-output format reliably: no invalid JSON
+failures occurred, and no repair step was needed. However, it returned no
+contradictions on this small subset, producing F1 = 0.
+
+This should not be interpreted as a final model-quality result. It indicates
+that after fixing structured-output reliability, the next bottleneck is
+contradiction recall: the prompt/retrieval context is too conservative for this
+subset. The useful project result is that FinSightIQ now separates:
+
+- schema/output failures
+- rate-limit failures
+- successful empty detections
+- true metric misses
+
+That separation makes benchmark interpretation more honest and auditable.
+
+### 8.2 Claim-Guided Benchmark Context Run
+
+The initial Groq subset showed that valid JSON alone is not enough: the model
+was not seeing enough relevant evidence. The benchmark context builder was then
+changed to use the labeled ground-truth snippets and section labels to select
+relevant chunks instead of always sending the first five chunks from each
+document. Selected chunks are clipped around the labeled claim to keep token
+usage manageable.
+
+Benchmark run:
+
+```txt
+benchmark_run_id: c267272f-c21a-42d8-9661-522edd904a52
+benchmark_type:   model_comparison
+created_at:       2026-06-29 13:57:52 UTC
+```
+
+Runtime configuration:
+
+| Field | Value |
+|---|---|
+| LLM provider | Groq |
+| Model | `llama-3.3-70b-versatile` |
+| Benchmark concurrency | 1 |
+| Pair subset limit | 5 |
+| Evaluated pairs | 5 |
+| Positive rows in subset | 4 |
+| Context strategy | claim-guided chunk selection + clipped evidence |
+
+Metrics:
+
+| F1 | Precision | Recall | TP | FP | FN |
+|---:|---:|---:|---:|---:|---:|
+| 0.6667 | 1.0 | 0.5 | 1 | 0 | 1 |
+
+Reliability metrics:
+
+| Field | Value |
+|---|---:|
+| Failed pair count | 0 |
+| Failed pair rate | 0 |
+| Invalid structured response count | 0 |
+| Invalid structured response rate | 0 |
+| JSON repair attempts | 0 |
+| Detected contradiction count | 4 |
+| Detection rate | 0.8 |
+| Total tokens | 15,634 |
+| Average latency | 1,533 ms |
+
+Interpretation:
+
+This result is the strongest evidence so far that the benchmark design matters.
+When the model receives claim-guided context, the stronger Groq model begins to
+recover contradictions while still maintaining valid structured output and zero
+false positives on this tiny subset.
+
+This five-row run is not statistically meaningful, but it validates the
+technical direction: benchmark recall should be evaluated with relevant evidence
+retrieval, not with arbitrary first-page chunks.
+
 ---
 
 ## 9. Hallucination Benchmark Result
@@ -494,7 +617,7 @@ The benchmark validates that the Phase 4 evaluation pipeline works end-to-end:
 The local model result should be interpreted as a baseline, not as a final
 claim about production model quality.
 
-Key observation:
+Key observation from the original local baseline:
 
 ```txt
 llama3.2:3b completed the benchmark, but produced 21 invalid structured outputs.
@@ -504,8 +627,15 @@ The prompt-sensitivity run makes the model limitation clearer: stricter prompts
 alone did not solve the invalid structured-response problem for the local 3B
 model.
 
+The benchmark runner now records richer reliability metrics, including failed
+pair rate, invalid structured-response rate, JSON repair attempts/successes,
+token totals, and average latency. A one-off Groq subset run showed zero
+structured-output failures, which confirms that the benchmark can now separate
+format reliability from actual contradiction recall.
+
 This indicates that the pipeline is functional, while a small local model is not
-fully reliable for strict JSON contradiction extraction.
+fully reliable for strict JSON contradiction extraction and the stronger-model
+subset requires prompt/retrieval recall tuning.
 
 ---
 
@@ -539,6 +669,10 @@ OLLAMA_MODEL_FAST=llama3.2:3b
 
 or use Groq for a smaller final-quality demo benchmark.
 
+A small Groq subset run has been recorded, but it is not a final-quality
+benchmark because it used only 20 rows. It is useful specifically for validating
+structured-output reliability and latency/token metrics.
+
 Dataset-size caveat: all reported F1 and hallucination figures are based on a
 150-row manually labeled pilot dataset, with 40 negative examples for the
 hallucination benchmark. These results are useful for system validation and
@@ -557,13 +691,13 @@ sets for each strategy.
 
 Remaining Phase 4 benchmark work:
 
-- metrics/export verification
+- optional prompt/retrieval recall tuning after structured-output repair
 
 The model-comparison, hallucination, prompt-sensitivity, and initial chunking
-strategy benchmarks are complete for the local baseline. Remaining Phase 4 work
-is primarily verification of metrics/export endpoints and, optionally, a
-cleaner final chunking rerun with identical ready document sets across all four
-strategies.
+strategy benchmarks are complete for the local baseline. Metrics/export
+endpoints have been verified. Optional follow-up work is a cleaner final
+chunking rerun with identical ready document sets across all four strategies
+and a tuned small Groq run after improving recall.
 
 ---
 
@@ -596,6 +730,40 @@ SELECT id,
        created_at
 FROM benchmark_runs
 WHERE id = '20e8da8d-0e70-474c-91eb-346f83976f10';
+"
+```
+
+Fetch the small Groq subset benchmark:
+
+```bash
+docker exec finsightiq-postgres \
+  psql -U finsight -d finsightiq -c "
+SELECT id,
+       benchmark_type,
+       total_samples,
+       metrics,
+       parameters,
+       prompt_version_id,
+       created_at
+FROM benchmark_runs
+WHERE id = '3671f67e-efb9-43a4-b1bf-c795efe0f690';
+"
+```
+
+Fetch the claim-guided Groq sanity benchmark:
+
+```bash
+docker exec finsightiq-postgres \
+  psql -U finsight -d finsightiq -c "
+SELECT id,
+       benchmark_type,
+       total_samples,
+       metrics,
+       parameters,
+       prompt_version_id,
+       created_at
+FROM benchmark_runs
+WHERE id = 'c267272f-c21a-42d8-9661-522edd904a52';
 "
 ```
 

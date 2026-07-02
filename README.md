@@ -1,58 +1,170 @@
 # FinSightIQ
 
-FinSightIQ is a work-in-progress backend prototype for real-time financial document intelligence and regulatory contradiction detection. The target system, described in `FinSightIQ_SRS.md`, combines document ingestion, PostgreSQL + pgvector storage, BullMQ workers, WebSocket collaboration, and LLM-powered retrieval/contradiction workflows for financial compliance use cases.
+Financial document intelligence for regulatory comparison, contradiction detection, research benchmarking, and real-time review workflows.
 
-The project is currently in active backend development. Core API infrastructure and data modeling are in place, while the full RAG/LLM research pipeline and frontend experience are still being built.
+FinSightIQ ingests public financial/regulatory documents, extracts text, chunks and embeds them, runs hybrid retrieval and LLM-based analysis, broadcasts scan/annotation events over WebSocket, and exposes the workflow through a Next.js frontend.
 
-## Active Development
+## Current stack
 
-This repository is not production-ready yet. The current implementation is focused on proving the backend foundation: schema design, authentication, collections, document upload, ingestion queue wiring, health checks, rate limiting, and WebSocket room/presence behavior.
+- Backend: Express 5, TypeScript, PostgreSQL + pgvector, Redis, BullMQ, raw WebSocket
+- Frontend: Next.js 16 App Router, React 19, Tailwind CSS, Recharts, Monaco editor
+- AI: Groq or Ollama LLM provider routing; Ollama/Groq/Hugging Face embedding provider routing
+- Storage: local uploads for development
+- Research: manually labeled ground-truth pairs, benchmark runs, LLM audit logs, export endpoints
 
-| Status | Area | Current State |
-|---|---|---|
-| [⚡ Done] | Relational schema design & PostgreSQL setup | Core tables are defined for users, refresh tokens, collections, documents, ingestion jobs, chunks, prompt templates, contradictions, stale references, annotations, WebSocket events, LLM logs, and benchmark runs. |
-| [⚡ Done] | Express server foundation | Express 5 server, config validation, structured logging, request IDs, global error handling, auth routes, RBAC middleware, rate limiting, file upload middleware, and health checks are implemented. |
-| [⚡ Done] | Authentication & authorization | JWT access tokens, refresh token rotation, role-based middleware, and collection membership checks are implemented. |
-| [⚡ Done] | Collection and document APIs | Collection CRUD/member routes and document upload/list/delete/retry handlers are implemented with type-safe route parameter validation. |
-| [⚡ Done] | WebSocket foundation | WebSocket auth, room joins/leaves, Redis pub/sub fan-out, presence state, ping/pong, and persisted WebSocket event replay support are implemented. |
-| [🔄 In Progress] | Ingestion pipeline worker | BullMQ ingest queue and PDF/text parsing, chunking, embedding, chunk persistence, and document-ready/document-failed broadcasts are implemented, but worker startup and end-to-end ingestion still need full integration testing. |
-| [🔄 In Progress] | Chunking and embedding | Fixed, sentence, and section-aware chunkers exist; embedding service supports provider routing/fallbacks, but retrieval quality testing is still pending. |
-| [🔄 In Progress] | Operational resilience | Redis-backed rate limiting, cleanup worker, health reporting, and fail-open behavior are present; broader failure-mode tests are still ongoing. |
-| [📅 Planned] | Custom LLM middleware routing | Prompt templates exist, but the model router, normalized LLM response layer, contradiction service, and LLM logging workflow still need implementation. |
-| [📅 Planned] | Hybrid retrieval and semantic search | Database schema supports vector and full-text search, but production-grade hybrid retrieval, citation formatting, and benchmark validation are not complete yet. |
-| [📅 Planned] | EDGAR integration | EDGAR files and configuration placeholders exist, but the controller, queue, and worker implementation are not complete. |
-| [📅 Planned] | Research dashboard and evaluation | `RESEARCH.md` defines methodology, but benchmark runs, metric collection, and dashboard/reporting are not implemented yet. |
-| [📅 Planned] | Frontend application | The SRS targets a Next.js frontend, but the current repository is backend-focused. |
+## Quick start
 
-## Current Backend Stack
-
-- Node.js + TypeScript
-- Express 5
-- PostgreSQL + pgvector
-- Redis + BullMQ
-- `ws` WebSocket server
-- Pino logging
-- Zod validation
-- Multer upload handling
-- Local disk storage adapter
-
-## Development Notes
-
-The backend can be built with:
+### 1. Configure backend
 
 ```bash
 cd backend
-npm run build
+cp .env.example .env
 ```
 
-Local dependencies are defined in `docker-compose.yml`:
+Set at minimum:
+
+```env
+JWT_SECRET=replace-with-a-long-random-secret
+DATABASE_URL=postgresql://finsight:finsight@localhost:5433/finsightiq
+REDIS_URL=redis://localhost:6379
+LLM_PROVIDER=ollama
+EMBEDDING_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+For Groq demos, set:
+
+```env
+LLM_PROVIDER=groq
+GROQ_API_KEY=...
+```
+
+### 2. Start services
 
 ```bash
 docker compose up -d postgres redis
 ```
 
-When the backend is running, health is available at:
+If using Ollama locally:
 
 ```bash
-curl http://localhost:4000/health
+ollama serve
+ollama pull llama3.2:3b
 ```
+
+### 3. Migrate and seed
+
+```bash
+cd backend
+npm install
+npm run migrate
+npm run seed:prompts
+```
+
+### 4. Start backend
+
+```bash
+cd backend
+npm run dev
+```
+
+Health check:
+
+```bash
+curl -fsS http://127.0.0.1:4000/health
+```
+
+### 5. Start frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+## Full local Docker dev
+
+After backend `.env` is configured:
+
+```bash
+docker compose up -d
+```
+
+Services:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:4000`
+- PostgreSQL: localhost port `5433`
+- Redis: localhost port `6379`
+
+## Main demo workflow
+
+1. Register/login as an analyst or admin.
+2. Create a collection.
+3. Upload two regulatory PDFs or use an existing seeded collection.
+4. Wait until documents become `ready`.
+5. Open collection → `Compare two documents`.
+6. Select two documents and run targeted scan.
+7. Watch `contradiction:new` events appear in real time.
+8. Open `Contradictions` dashboard to filter, review, and resolve results.
+9. Open a document viewer and create/update/delete annotations.
+10. Open `Research` as admin/researcher to review benchmark metrics and export CSV.
+
+## Useful scripts
+
+Backend:
+
+```bash
+cd backend
+npm run build
+npm run test:e2e
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+RBI live ingestion smoke:
+
+```bash
+SKIP_UPLOAD=1 \
+RUN_RBI_LIVE=1 \
+RUN_RBI_AI=1 \
+RUN_RBI_CONTRADICTION=1 \
+RBI_MAX_ENQUEUED=2 \
+RBI_NAME_FILTER="Counterfeit Notes" \
+WAIT_SECONDS=1800 \
+COLLECTION_NAME="FinSightIQ RBI Live Demo" \
+./scripts/phase2-ingestion-smoke.sh
+```
+
+## Research and benchmark data
+
+See [RESEARCH.md](./RESEARCH.md) for:
+
+- ground-truth construction
+- benchmark run IDs
+- F1/precision/recall results
+- hallucination benchmark
+- prompt sensitivity benchmark
+- chunking strategy benchmark
+- dataset-size and local-model caveats
+
+Current results should be treated as pilot-scale research evidence, not production accuracy claims. The project is successful when the workflow is observable, auditable, and its limitations are measured clearly.
+
+## Important caveats
+
+- Groq free-tier limits can interrupt long benchmarks.
+- Local `llama3.2:3b` is useful for development but has weaker structured JSON reliability than larger hosted models.
+- Research metrics depend heavily on the manually labeled dataset size and quality.
+- Cloud deployment/R2 migration require external credentials and are intentionally not committed.

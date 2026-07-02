@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -51,6 +49,25 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: finsightiq-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_WS_URL: ws://localhost:4000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
 
 volumes:
   pgdata:
+  uploads:
