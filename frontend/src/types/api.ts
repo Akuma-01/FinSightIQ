@@ -17,6 +17,15 @@ export interface Collection {
 	accessRole?: 'owner' | 'editor' | 'viewer';
 }
 
+export interface CollectionMember {
+	id: string;
+	email: string;
+	displayName?: string;
+	role: Role;
+	accessRole: 'owner' | 'editor' | 'viewer';
+	addedAt?: string;
+}
+
 export interface CollectionSummary {
 	critical: number;
 	moderate: number;

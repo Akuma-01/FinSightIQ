@@ -1,0 +1,402 @@
+'use client';
+
+import { DocumentStatusBadge } from '@/components/documents/DocumentStatusBadge';
+import { EdgarFetchModal } from '@/components/documents/EdgarFetchModal';
+import { UploadModal } from '@/components/documents/UploadModal';
+import { ManageMembersModal } from '@/components/collections/ManageMembersModal';
+import { AppShell } from '@/components/layout/AppShell';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { MetricCard } from '@/components/ui/MetricCard';
+import { Spinner } from '@/components/ui/Spinner';
+import { useAuth } from '@/context/AuthContext';
+import { useCollectionRoom } from '@/hooks/useCollectionRoom';
+import { ai, documents as documentsAPI } from '@/lib/api';
+import type { Document } from '@/types/api';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { use, useCallback, useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
+
+export default function CollectionDetailPage({
+	params,
+}: {
+	params: Promise<{ collectionId: string }>;
+}) {
+	const { collectionId } = use(params);
+	const { token, user, loading: authLoading } = useAuth();
+	const router = useRouter();
+	const [documents, setDocuments] = useState<Document[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState('');
+	const [showUpload, setShowUpload] = useState(false);
+	const [showEdgar, setShowEdgar] = useState(false);
+	const [showMembers, setShowMembers] = useState(false);
+	const [query, setQuery] = useState('');
+	const [searchAnswer, setSearchAnswer] = useState('');
+	const [searchSources, setSearchSources] = useState<unknown[]>([]);
+	const [searching, setSearching] = useState(false);
+	const [collectionSummary, setCollectionSummary] = useState('');
+	const [summarizing, setSummarizing] = useState(false);
+	const [retryingId, setRetryingId] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (authLoading) return;
+		if (!token) {
+			router.replace('/login');
+			return;
+		}
+
+		let cancelled = false;
+		documentsAPI.list(token, collectionId)
+			.then(({ documents }) => {
+				if (!cancelled) setDocuments(documents);
+			})
+			.catch((err) => {
+				if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load documents');
+			})
+			.finally(() => {
+				if (!cancelled) setLoading(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [authLoading, collectionId, router, token]);
+
+	const upsertDocument = useCallback((patch: Partial<Document> & { id: string; filename: string }) => {
+		setDocuments((current) => {
+			const existing = current.find((doc) => doc.id === patch.id);
+			if (existing) {
+				return current.map((doc) => doc.id === patch.id ? { ...doc, ...patch } : doc);
+			}
+
+			const next: Document = {
+				id: patch.id,
+				filename: patch.filename,
+				mimeType: patch.mimeType ?? '',
+				sizeBytes: patch.sizeBytes ?? 0,
+				status: patch.status ?? 'processing',
+				docType: patch.docType ?? '',
+				source: patch.source ?? 'manual',
+				effectiveDate: patch.effectiveDate ?? null,
+				createdAt: patch.createdAt ?? new Date().toISOString(),
+				jobStatus: patch.jobStatus,
+				failureReason: patch.failureReason,
+			};
+
+			return [next, ...current];
+		});
+	}, []);
+
+	const roomCallbacks = useMemo(() => ({
+		onDocumentProcessing: (payload: { documentId: string; filename: string }) => {
+			upsertDocument({
+				id: payload.documentId,
+				filename: payload.filename,
+				status: 'processing',
+				jobStatus: 'running',
+			});
+		},
+		onDocumentReady: (payload: { documentId: string; filename: string; chunkCount: number }) => {
+			upsertDocument({
+				id: payload.documentId,
+				filename: payload.filename,
+				status: 'ready',
+				jobStatus: 'completed',
+			});
+		},
+		onDocumentFailed: (payload: { documentId: string; filename: string; failureReason: string }) => {
+			upsertDocument({
+				id: payload.documentId,
+				filename: payload.filename,
+				status: 'failed',
+				jobStatus: 'failed',
+				failureReason: payload.failureReason,
+			});
+		},
+	}), [upsertDocument]);
+
+	useCollectionRoom(token, collectionId, roomCallbacks);
+
+	if (authLoading || loading) {
+		return (
+			<main className="flex min-h-screen items-center justify-center bg-slate-950">
+				<Spinner className="text-blue-300" />
+			</main>
+		);
+	}
+
+	if (!token) return null;
+
+	const readyCount = documents.filter((doc) => doc.status === 'ready').length;
+	const processingCount = documents.filter((doc) => doc.status === 'processing').length;
+	const failedCount = documents.filter((doc) => doc.status === 'failed').length;
+	const canUpload = user?.role === 'admin' || user?.role === 'analyst';
+	const canRetry = user?.role === 'admin';
+
+	async function runSearch() {
+		if (!token || !query.trim()) return;
+		const controller = new AbortController();
+		const timeout = window.setTimeout(() => controller.abort(), 45_000);
+		setSearching(true);
+		setSearchAnswer('');
+		setSearchSources([]);
+		try {
+			const result = await ai.search(token, { collectionId, query: query.trim() }, controller.signal);
+			setSearchAnswer(result.answer);
+			setSearchSources(result.sources ?? []);
+		} catch (err) {
+			const message = err instanceof DOMException && err.name === 'AbortError'
+				? 'Search timed out after 45 seconds. Local Ollama may be busy; try again after scans finish or switch the demo to Groq.'
+				: err instanceof Error ? err.message : 'Search failed';
+			toast.error(message);
+		} finally {
+			window.clearTimeout(timeout);
+			setSearching(false);
+		}
+	}
+
+	async function summarizeCollection() {
+		if (!token) return;
+		setSummarizing(true);
+		try {
+			const result = await ai.summarizeCollection(token, collectionId);
+			setCollectionSummary(result.summary);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Collection summary failed');
+		} finally {
+			setSummarizing(false);
+		}
+	}
+
+	async function retryDocument(document: Document) {
+		if (!token) return;
+		setRetryingId(document.id);
+		try {
+			await documentsAPI.retry(token, document.id);
+			upsertDocument({
+				id: document.id,
+				filename: document.filename,
+				status: 'processing',
+				jobStatus: 'queued',
+				failureReason: undefined,
+			});
+			toast.success(`Retry queued: ${document.filename}`);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Could not retry document');
+		} finally {
+			setRetryingId(null);
+		}
+	}
+
+	return (
+		<AppShell
+			title="Collection workspace"
+			eyebrow="Document intelligence"
+			description={`${documents.length} documents · ${readyCount} ready · ${processingCount} processing · ${failedCount} failed`}
+			backHref="/collections"
+			backLabel="Back to collections"
+			maxWidth="max-w-7xl"
+			actions={(
+				<>
+					{canUpload && (
+						<>
+							<button
+								onClick={() => setShowUpload(true)}
+								className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
+							>
+								Upload
+							</button>
+							<button
+								onClick={() => setShowEdgar(true)}
+								className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
+							>
+								Fetch EDGAR
+							</button>
+						</>
+					)}
+					{user?.role === 'admin' && (
+						<button
+							type="button"
+							onClick={() => setShowMembers(true)}
+							className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
+						>
+							Members
+						</button>
+					)}
+					<Link
+						href={`/collections/${collectionId}/compare`}
+						className="rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400"
+					>
+						Compare
+					</Link>
+					<Link
+						href={`/collections/${collectionId}/contradictions`}
+						className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
+					>
+						Contradictions
+					</Link>
+					{(user?.role === 'admin' || user?.role === 'researcher') && (
+						<Link
+							href={`/collections/${collectionId}/research`}
+							className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
+						>
+							Research
+						</Link>
+					)}
+				</>
+			)}
+		>
+
+				{error && (
+					<div className="mt-6 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-200">
+						{error}
+					</div>
+				)}
+
+				<div className="mt-8 grid gap-4 md:grid-cols-3">
+					<MetricCard label="Ready" value={readyCount} tone="green" helper="Available for search and scans" />
+					<MetricCard label="Processing" value={processingCount} tone="blue" helper="Ingestion jobs in progress" />
+					<MetricCard label="Failed" value={failedCount} tone="red" helper="Admin can retry failed jobs" />
+				</div>
+
+				<div className="mt-6 grid gap-4 lg:grid-cols-2">
+					<section className="rounded-3xl border border-slate-700 bg-slate-900/85 p-6 shadow-lg shadow-slate-950/20">
+						<h2 className="text-base font-bold text-white">Semantic search</h2>
+						<p className="mt-1 text-xs text-slate-400">Ask a question over this collection using the RAG endpoint.</p>
+						<div className="mt-4 flex gap-2">
+							<input
+								value={query}
+								onChange={(event) => setQuery(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key === 'Enter') void runSearch();
+								}}
+								placeholder="Example: What are the main reporting obligations?"
+								className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+							/>
+							<button
+								type="button"
+								onClick={runSearch}
+								disabled={searching || !query.trim()}
+								className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-bold text-white hover:bg-blue-400 disabled:opacity-50"
+							>
+								{searching ? 'Searching…' : 'Search'}
+							</button>
+						</div>
+						{searchAnswer && (
+							<div className="mt-4 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
+								<p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{searchAnswer}</p>
+								<p className="mt-3 text-xs text-blue-200">{searchSources.length} source chunks returned</p>
+							</div>
+						)}
+					</section>
+
+					<section className="rounded-3xl border border-slate-700 bg-slate-900/85 p-6 shadow-lg shadow-slate-950/20">
+						<div className="flex items-start justify-between gap-3">
+							<div>
+								<h2 className="text-base font-bold text-white">Collection summary</h2>
+								<p className="mt-1 text-xs text-slate-400">Generate a concise AI summary for demo/review.</p>
+							</div>
+							<button
+								type="button"
+								onClick={summarizeCollection}
+								disabled={summarizing || readyCount === 0}
+								className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 disabled:opacity-50"
+							>
+								{summarizing ? 'Summarizing…' : 'Summarize'}
+							</button>
+						</div>
+						{collectionSummary ? (
+							<p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-100">{collectionSummary}</p>
+						) : (
+							<p className="mt-4 rounded-2xl border border-dashed border-slate-600 p-4 text-sm text-slate-400">
+								No summary generated yet.
+							</p>
+						)}
+					</section>
+				</div>
+
+				<div className="mt-6 overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/85 shadow-lg shadow-slate-950/20">
+					<div className="flex items-center justify-between gap-4 border-b border-slate-700 px-4 py-3">
+						<h2 className="text-sm font-bold text-white">Documents</h2>
+						<p className="text-xs text-slate-400">PDF and plain text uploads are processed asynchronously.</p>
+					</div>
+
+					{documents.length === 0 ? (
+						<div className="p-5">
+							<EmptyState
+								title="No documents yet"
+								description="Upload a PDF/text file or fetch a SEC filing to begin the demo workflow."
+							/>
+						</div>
+					) : (
+						<ul className="divide-y divide-slate-800">
+							{documents.map((doc) => (
+								<li key={doc.id} className="flex items-center justify-between gap-4 px-4 py-3">
+									<div className="min-w-0">
+										<Link
+											href={`/collections/${collectionId}/documents/${doc.id}`}
+											className="truncate text-sm font-semibold text-slate-100 hover:text-blue-200 hover:underline"
+										>
+											{doc.filename}
+										</Link>
+										<p className="mt-1 text-xs text-slate-400">
+											{doc.source || 'manual'} · {doc.sizeBytes ? `${Math.round(doc.sizeBytes / 1024)} KB` : 'queued'}
+											{doc.failureReason ? ` · ${doc.failureReason}` : ''}
+										</p>
+									</div>
+									<div className="flex shrink-0 items-center gap-2">
+										{canRetry && doc.status === 'failed' && (
+											<button
+												type="button"
+												onClick={() => retryDocument(doc)}
+												disabled={retryingId === doc.id}
+												className="rounded-lg border border-red-400/40 px-3 py-1 text-xs font-semibold text-red-200 hover:bg-red-500/15 disabled:opacity-50"
+											>
+												{retryingId === doc.id ? 'Retrying…' : 'Retry'}
+											</button>
+										)}
+										<DocumentStatusBadge status={doc.status} />
+									</div>
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+			{showUpload && (
+				<UploadModal
+					token={token}
+					collectionId={collectionId}
+					onQueued={(payload) => {
+						upsertDocument({
+							id: payload.documentId,
+							filename: payload.filename,
+							status: payload.status,
+							jobStatus: 'queued',
+						});
+						toast.success(`Upload queued: ${payload.filename}`);
+					}}
+					onClose={() => setShowUpload(false)}
+				/>
+			)}
+
+			{showEdgar && (
+				<EdgarFetchModal
+					token={token}
+					collectionId={collectionId}
+					onQueued={(payload) => {
+						toast.success(`${payload.ticker} ${payload.filingType} ${payload.year} queued. It will appear when ingestion completes.`);
+					}}
+					onClose={() => setShowEdgar(false)}
+				/>
+			)}
+			{showMembers && token && (
+				<ManageMembersModal
+					token={token}
+					collectionId={collectionId}
+					onClose={() => setShowMembers(false)}
+				/>
+			)}
+		</AppShell>
+	);
+}

@@ -1,4 +1,4 @@
-import type { Annotation, BenchmarkRun, Collection, Contradiction, Document, HealthStatus, ResearchMetrics, StaleReference, User } from '@/types/api';
+import type { Annotation, BenchmarkRun, Collection, CollectionMember, Contradiction, Document, HealthStatus, ResearchMetrics, StaleReference, User } from '@/types/api';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -35,6 +35,18 @@ type RawCollection = {
 	createdAt?: string;
 	access_role?: 'owner' | 'editor' | 'viewer';
 	accessRole?: 'owner' | 'editor' | 'viewer';
+};
+
+type RawCollectionMember = {
+	id: string;
+	email: string;
+	display_name?: string;
+	displayName?: string;
+	role: User['role'];
+	access_role?: CollectionMember['accessRole'];
+	accessRole?: CollectionMember['accessRole'];
+	added_at?: string;
+	addedAt?: string;
 };
 
 type RawDocument = {
@@ -173,6 +185,17 @@ function normalizeCollection(collection: RawCollection): Collection {
 		documentCount: Number(collection.documentCount ?? collection.document_count ?? 0),
 		createdAt: collection.createdAt ?? collection.created_at ?? '',
 		accessRole: collection.accessRole ?? collection.access_role,
+	};
+}
+
+function normalizeCollectionMember(member: RawCollectionMember): CollectionMember {
+	return {
+		id: member.id,
+		email: member.email,
+		displayName: member.displayName ?? member.display_name ?? member.email,
+		role: member.role,
+		accessRole: member.accessRole ?? member.access_role ?? 'viewer',
+		addedAt: member.addedAt ?? member.added_at,
 	};
 }
 
@@ -355,7 +378,8 @@ export const collections = {
 
 	members: {
 		list: (token: string, id: string) =>
-			request<{ members: unknown[] }>(`/api/collections/${id}/members`, { token }),
+			request<{ members: RawCollectionMember[] }>(`/api/collections/${id}/members`, { token })
+				.then((res) => ({ members: res.members.map(normalizeCollectionMember) })),
 		add: (token: string, id: string, data: { userId: string; accessRole: string }) =>
 			request(`/api/collections/${id}/members`, { method: 'POST', token, body: JSON.stringify(data) }),
 		remove: (token: string, id: string, uid: string) =>
@@ -421,9 +445,9 @@ export const ai = {
 	resolveStale: (token: string, id: string) =>
 		request(`/api/ai/stale/${id}/resolve`, { method: 'PATCH', token }),
 
-	search: (token: string, data: { collectionId: string; query: string }) =>
+	search: (token: string, data: { collectionId: string; query: string }, signal?: AbortSignal) =>
 		request<{ answer: string; sources: unknown[] }>
-			('/api/ai/search', { method: 'POST', token, body: JSON.stringify(data) }),
+			('/api/ai/search', { method: 'POST', token, body: JSON.stringify(data), signal }),
 
 	summarizeDocument: (token: string, documentId: string) =>
 		request<{ summary: string }>
