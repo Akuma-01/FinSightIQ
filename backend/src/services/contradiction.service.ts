@@ -278,14 +278,17 @@ export async function scanDocumentPairTargeted(
 	docIdA: string,
 	docIdB: string,
 	collectionId: string,
-	userId: string
+	userId: string,
+	userRole: 'admin' | 'analyst' | 'compliance_officer' | 'researcher'
 ) {
-	const { rows: memberRows } = await db.query(
-		'SELECT 1 FROM collection_members WHERE collection_id = $1 AND user_id = $2',
-		[collectionId, userId]
-	);
-	if (!memberRows.length) {
-		throw new AppError(403, 'You are not a member of this collection');
+	if (userRole !== 'admin') {
+		const { rows: memberRows } = await db.query(
+			'SELECT 1 FROM collection_members WHERE collection_id = $1 AND user_id = $2',
+			[collectionId, userId]
+		);
+		if (!memberRows.length) {
+			throw new AppError(403, 'You are not a member of this collection');
+		}
 	}
 
 	const { rows } = await db.query(

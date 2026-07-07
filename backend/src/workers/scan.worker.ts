@@ -16,13 +16,13 @@ export function startScanWorker(): void {
 		async (job: Job<ScanJobData>) => {
 			activeJobs++;
 			try {
-				const { collectionId, userId, mode, docIdA, docIdB } = job.data;
+				const { collectionId, userId, userRole, mode, docIdA, docIdB } = job.data;
 
 				if (mode === 'targeted') {
 					if (!docIdA || !docIdB) {
 						throw new Error('Targeted scan requires docIdA and docIdB');
 					}
-					await scanDocumentPairTargeted(docIdA, docIdB, collectionId, userId);
+					await scanDocumentPairTargeted(docIdA, docIdB, collectionId, userId, userRole);
 					return;
 				}
 

@@ -39,6 +39,7 @@ export const scanCollection = asyncHandler(async (req: Request, res: Response) =
 		const job = await scanQueue.add('scan', {
 			collectionId,
 			userId: req.user!.id,
+			userRole: req.user!.role,
 			mode: 'full',
 		});
 
@@ -67,6 +68,7 @@ export const scanTargeted = asyncHandler(async (req: Request, res: Response) => 
 	const job = await scanQueue.add('scan', {
 		collectionId: parsed.data.collectionId,
 		userId: req.user!.id,
+		userRole: req.user!.role,
 		mode: 'targeted',
 		docIdA: parsed.data.docIdA,
 		docIdB: parsed.data.docIdB,

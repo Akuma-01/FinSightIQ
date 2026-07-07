@@ -14,7 +14,7 @@ router.use(verifyJWT);
 
 // Contradiction scan
 router.post('/contradict/targeted',
-	contradictRateLimit, AI.scanTargeted);
+	requireCollectionMember, contradictRateLimit, AI.scanTargeted);
 
 router.post('/contradict/:collectionId',
 	requireCollectionMember, contradictRateLimit, AI.scanCollection);
