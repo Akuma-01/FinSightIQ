@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { db } from '../db/pool';
 import { llmCall } from '../lib/llm/llm.client';
+import { logger } from '../lib/logger';
 import { buildPrompt } from '../lib/llm/prompt.builder';
 import { embedTexts } from './embedding.service';
 
@@ -14,10 +15,41 @@ export interface SearchResult {
 export const RAG_VECTOR_LIMIT = 3;
 export const RAG_KEYWORD_LIMIT = 2;
 export const RAG_FINAL_LIMIT_PER_DOCUMENT = 5;
+const RAG_LLM_TIMEOUT_MS = 25_000;
 
 export function shouldUseKeywordSearch(query: string): boolean {
 	const keywordTerms = query.match(/[a-zA-Z0-9]+/g) ?? [];
 	return keywordTerms.filter(word => word.length > 3).length >= 2;
+}
+
+function extractiveFallbackAnswer(
+	query: string,
+	chunks: { chunk_text: string; chunk_index: number; filename: string }[]
+) {
+	const excerpts = chunks.slice(0, 4).map((chunk, index) => {
+		const clean = chunk.chunk_text.replace(/\s+/g, ' ').trim().slice(0, 450);
+		return `${index + 1}. ${chunk.filename} §${chunk.chunk_index}: ${clean}`;
+	});
+
+	return [
+		`The semantic search found ${chunks.length} relevant source chunk(s) for: "${query}".`,
+		'The local LLM answer generation did not finish quickly enough, so this response is an extractive fallback from the retrieved pgvector/BM25 sources:',
+		'',
+		...excerpts,
+	].join('\n');
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<never>((_resolve, reject) => {
+		timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+	});
+
+	try {
+		return await Promise.race([promise, timeout]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
 }
 
 export async function semanticSearch(
@@ -138,23 +170,30 @@ export async function semanticSearch(
 		chunks: context,
 	});
 
-	const response = await llmCall({
-		task: 'semantic_search',
-		messages: [{ role: 'user', content: body }],
-		userId,
-		promptVersionId,
-		maxTokens: 512,
+	const response = await withTimeout(
+		llmCall({
+			task: 'semantic_search',
+			messages: [{ role: 'user', content: body }],
+			userId,
+			promptVersionId,
+			maxTokens: 512,
+		}),
+		RAG_LLM_TIMEOUT_MS,
+		'Semantic search LLM answer'
+	).catch((err) => {
+		logger.warn({ err, collectionId, userId }, 'Semantic search LLM fallback activated');
+		return null;
 	});
 
 	return {
-		answer: response.content,
+		answer: response?.content || extractiveFallbackAnswer(safeQuery, chunks),
 		sources: chunks.map(c => ({
 			chunkId: c.id,
 			documentName: c.filename,
 			chunkIndex: c.chunk_index,
 			snippet: c.chunk_text.slice(0, 200),
 		})),
-		tokensUsed: response.tokensUsed,
+		tokensUsed: response?.tokensUsed ?? { prompt: 0, completion: 0, total: 0 },
 		latencyMs: Date.now() - startMs,
 	};
 }
