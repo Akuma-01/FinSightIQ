@@ -9,24 +9,85 @@ import { redis } from '../redis/client';
 import { broadcastToRoom } from '../websocket/ws.rooms';
 
 // ─── Zod schema for LLM structured output validation ─────────────────────────
-const ContradictionItemSchema = z.object({
-	contradiction_type: z.enum([
+function normalizeContradictionType(value: unknown): unknown {
+	if (typeof value !== 'string') return value;
+	const normalized = value.trim().toLowerCase();
+	const aliases: Record<string, string> = {
+		policy_conflict: 'policy_conflict',
+		regulatory_breach: 'regulatory_breach',
+		numerical_discrepancy: 'numerical_discrepancy',
+		stale_reference: 'stale_reference',
+		definitional_conflict: 'definitional_conflict',
+		rule_scope_mismatch: 'policy_conflict',
+		rule_scope_conflict: 'policy_conflict',
+		scope_mismatch: 'policy_conflict',
+		scope_conflict: 'policy_conflict',
+		numerical_mismatch: 'numerical_discrepancy',
+		numeric_discrepancy: 'numerical_discrepancy',
+		definition_conflict: 'definitional_conflict',
+		stale_reference_conflict: 'stale_reference',
+	};
+	return aliases[normalized] ?? normalized;
+}
+
+function normalizeSeverity(value: unknown): unknown {
+	if (typeof value !== 'string') return value;
+	const normalized = value.trim().toLowerCase();
+	const aliases: Record<string, string> = {
+		critical: 'critical',
+		high: 'critical',
+		severe: 'critical',
+		moderate: 'moderate',
+		medium: 'moderate',
+		minor: 'minor',
+		low: 'minor',
+	};
+	return aliases[normalized] ?? normalized;
+}
+
+function normalizeContradictionsOutput(value: unknown): unknown {
+	if (
+		value &&
+		typeof value === 'object' &&
+		!Array.isArray(value) &&
+		Object.keys(value as Record<string, unknown>).length === 0
+	) {
+		return [];
+	}
+	return value;
+}
+
+function normalizeContradictionItem(value: unknown): unknown {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+	const item = value as Record<string, unknown>;
+	return {
+		...item,
+		contradiction_type: item.contradiction_type ?? item.contradictionType ?? item.type,
+		claim_a: item.claim_a ?? item.claimA,
+		claim_b: item.claim_b ?? item.claimB,
+		section_a: item.section_a ?? item.sectionA ?? null,
+		section_b: item.section_b ?? item.sectionB ?? null,
+	};
+}
+
+const ContradictionItemSchema = z.preprocess(normalizeContradictionItem, z.object({
+	contradiction_type: z.preprocess(normalizeContradictionType, z.enum([
 		'policy_conflict', 'regulatory_breach', 'numerical_discrepancy',
 		'stale_reference', 'definitional_conflict',
-	]),
-	severity: z.enum(['critical', 'moderate', 'minor']),
+	])),
+	severity: z.preprocess(normalizeSeverity, z.enum(['critical', 'moderate', 'minor'])),
 	claim_a: z.string().min(1).max(2_000).transform(s => s.trim()),
 	claim_b: z.string().min(1).max(2_000).transform(s => s.trim()),
 	section_a: z.string().max(200).nullable().optional().transform(s => s?.trim() ?? null),
 	section_b: z.string().max(200).nullable().optional().transform(s => s?.trim() ?? null),
 	explanation: z.string().min(1).max(800).transform(s => s.trim()),
-});
+}));
 
 const ContradictionItemsSchema = z.array(ContradictionItemSchema).max(100);
-const ContradictionsOutputSchema = z.union([
+const ContradictionsOutputSchema = z.preprocess(normalizeContradictionsOutput, z.union([
 	ContradictionItemsSchema,
 	z.object({ contradictions: ContradictionItemsSchema }),
-]).transform(value => Array.isArray(value) ? value : value.contradictions);
+])).transform(value => Array.isArray(value) ? value : value.contradictions);
 
 const CENTROID_TTL_SECONDS = 60 * 60;
 

@@ -70,6 +70,7 @@ const EnvSchema = z.object({
 		{ message: 'GROUND_TRUTH_DIR must be a relative path with no .. traversal' }
 	),
 	BENCHMARK_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(1),
+	BENCHMARK_MAX_PAIRS: z.coerce.number().int().min(1).optional(),
 	EXPORT_DIR: z.string().default('./exports').refine(
 		(path) => !path.includes('..') && !path.startsWith('/'),
 		{ message: 'EXPORT_DIR must be a relative path with no .. traversal' }
