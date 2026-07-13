@@ -67,7 +67,27 @@ async function bootstrap() {
 
 	// ── Body parsing ──────────────────────────────────────────────
 	app.use(cors({
-		origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000',
+		origin: (origin, callback) => {
+			if (!origin) return callback(null, true);
+
+			const configuredOrigins = (process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000')
+				.split(',')
+				.map((value) => value.trim())
+				.filter(Boolean);
+
+			let hostname = '';
+			try {
+				hostname = new URL(origin).hostname;
+			} catch {
+				return callback(new Error(`CORS: invalid origin ${origin}`));
+			}
+
+			const allowed = configuredOrigins.some((allowedOrigin) => allowedOrigin === origin)
+				|| /\.vercel\.app$/.test(hostname);
+
+			if (allowed) return callback(null, true);
+			return callback(new Error(`CORS: origin ${origin} not allowed`));
+		},
 		credentials: true,
 	}));
 	app.use(express.json({ limit: '1mb' })); // reject bodies > 1MB
