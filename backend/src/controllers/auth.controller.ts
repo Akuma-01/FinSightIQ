@@ -11,15 +11,17 @@ const cookieOpts = {
 	maxAge: config.REFRESH_TOKEN_EXPIRES_DAYS * 86_400_000,
 };
 
+const SELF_SERVICE_ROLES = ['analyst', 'compliance_officer', 'researcher'] as const;
+
 const RegisterSchema = z.object({
-	email: z.string().email(),
+	email: z.email(),
 	password: z.string().min(8, 'Password must be at least 8 characters'),
 	displayName: z.string().min(1),
-	role: z.enum(['admin', 'analyst', 'compliance_officer', 'researcher']),
+	role: z.enum(SELF_SERVICE_ROLES).default('analyst'),
 });
 
 const LoginSchema = z.object({
-	email: z.string().email(),
+	email: z.email(),
 	password: z.string().min(1),
 });
 

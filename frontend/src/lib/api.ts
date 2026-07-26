@@ -296,6 +296,7 @@ async function request<T>(
 		...init,
 		headers,
 		credentials: 'include',
+		cache: 'no-store',
 	});
 
 	if (res.status === 401 && !_isRetry && refreshCallback && path !== '/api/auth/refresh') {
@@ -325,6 +326,7 @@ async function fetchWithAuthRetry(
 			...(init.headers as Record<string, string> ?? {}),
 		},
 		credentials: 'include',
+		cache: 'no-store',
 	});
 
 	if (res.status === 401 && !_isRetry && refreshCallback) {
@@ -372,6 +374,18 @@ export const collections = {
 		request<{ collection: RawCollection }>
 			('/api/collections', { method: 'POST', token, body: JSON.stringify(data) })
 			.then((res) => ({ collection: normalizeCollection(res.collection) })),
+
+	get: (token: string, id: string) =>
+		request<{ collection: RawCollection }>(`/api/collections/${id}`, { token })
+			.then((res) => ({ collection: normalizeCollection(res.collection) })),
+
+	update: (token: string, id: string, data: { name?: string; archived?: boolean }) =>
+		request<{ collection: RawCollection }>
+			(`/api/collections/${id}`, { method: 'PATCH', token, body: JSON.stringify(data) })
+			.then((res) => ({ collection: normalizeCollection(res.collection) })),
+
+	remove: (token: string, id: string) =>
+		request<{ message: string }>(`/api/collections/${id}`, { method: 'DELETE', token }),
 
 	summary: (token: string, id: string) =>
 		request<import('../types/api').CollectionSummary>(`/api/collections/${id}/summary`, { token }),
@@ -535,10 +549,51 @@ export const research = {
 	},
 };
 
+type RawAdminUser = {
+	id: string;
+	email: string;
+	role: User['role'];
+	displayName?: string;
+	display_name?: string;
+	createdAt?: string;
+	created_at?: string;
+};
+
+export type AdminUser = {
+	id: string;
+	email: string;
+	role: User['role'];
+	displayName: string;
+	createdAt: string;
+};
+
+function normalizeAdminUser(user: RawAdminUser): AdminUser {
+	return {
+		id: user.id,
+		email: user.email,
+		role: user.role,
+		displayName: user.displayName ?? user.display_name ?? user.email,
+		createdAt: user.createdAt ?? user.created_at ?? '',
+	};
+}
+
 // ─── Health ───────────────────────────────────────────────────────────────────
 
 export const health = {
 	check: () => request<HealthStatus>('/health'),
+};
+
+// ─── Users (admin only) ────────────────────────────────────────────────────────
+
+export const users = {
+	list: (token: string) =>
+		request<{ users: RawAdminUser[] }>('/api/users', { token })
+			.then((res) => ({ users: res.users.map(normalizeAdminUser) })),
+
+	updateRole: (token: string, userId: string, role: User['role']) =>
+		request<{ user: RawAdminUser }>
+			(`/api/users/${userId}/role`, { method: 'PATCH', token, body: JSON.stringify({ role }) })
+			.then((res) => ({ user: normalizeAdminUser(res.user) })),
 };
 
 export { APIError };

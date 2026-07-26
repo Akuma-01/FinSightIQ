@@ -26,6 +26,7 @@ import healthRoutes from './routes/health.routes';
 import llmRoutes from './routes/llm.routes';
 import researchRoutes from './routes/research.routes';
 import testRoutes from './routes/test.routes';
+import usersRoutes from './routes/users.routes';
 import { initWebSocketServer } from './websocket/ws.server';
 import { startBenchmarkWorker } from './workers/benchmark.worker';
 import { startCleanupWorker } from './workers/cleanup.worker';
@@ -100,6 +101,7 @@ async function bootstrap() {
 	app.use('/api/collections/:collectionId/documents', documentsRoutes);
 	app.use('/api/documents', documentActionsRoutes);
 	app.use('/api/edgar', edgarRoutes);
+	app.use('/api/users', usersRoutes);
 	app.use('/api', testRoutes);
 	app.use(healthRoutes);
 

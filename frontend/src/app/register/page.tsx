@@ -10,7 +10,6 @@ export default function RegisterPage() {
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 	const [displayName, setDisplayName] = useState('');
-	const [role, setRole] = useState('analyst');
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
 
@@ -19,7 +18,10 @@ export default function RegisterPage() {
 		setError('');
 		setLoading(true);
 		try {
-			await auth.register({ email, password, displayName, role });
+			// Every self-service signup starts as an analyst. Compliance-officer
+			// and researcher access, and admin access, are granted later by an
+			// admin from the admin panel — see /api/users.
+			await auth.register({ email, password, displayName, role: 'analyst' });
 			router.replace('/login');
 		} catch (err) {
 			setError(err instanceof APIError ? err.message : 'Registration failed');
@@ -35,7 +37,7 @@ export default function RegisterPage() {
 					<div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500 text-sm font-black text-white">FI</div>
 					<div>
 						<h1 className="text-2xl font-bold text-white">Create account</h1>
-						<p className="mt-1 text-sm text-slate-300">Use analyst for normal document work.</p>
+						<p className="mt-1 text-sm text-slate-300">Takes a minute — no setup decisions required.</p>
 					</div>
 				</div>
 
@@ -64,15 +66,6 @@ export default function RegisterPage() {
 						required
 						minLength={8}
 					/>
-					<select
-						value={role}
-						onChange={(event) => setRole(event.target.value)}
-						className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-					>
-						<option value="analyst">Analyst</option>
-						<option value="compliance_officer">Compliance officer</option>
-						<option value="researcher">Researcher</option>
-					</select>
 
 					{error && <p className="text-sm text-red-600">{error}</p>}
 
