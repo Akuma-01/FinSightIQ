@@ -1,17 +1,11 @@
 'use client';
 
 import { useAuth } from '@/context/AuthContext';
-import { useSharedWebSocket } from '@/context/WebSocketContext';
 import { cn } from '@/lib/cn';
+import { roleLabel } from '@/lib/labels';
 import { theme } from '@/lib/theme';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-
-function wsClass(status: string) {
-	if (status === 'connected') return theme.badge.emerald;
-	if (status === 'connecting' || status === 'reconnecting') return theme.badge.amber;
-	return theme.badge.slate;
-}
 
 export function AppShell({
 	children,
@@ -33,7 +27,6 @@ export function AppShell({
 	maxWidth?: string;
 }) {
 	const { user, logout } = useAuth();
-	const { status } = useSharedWebSocket();
 	const router = useRouter();
 
 	return (
@@ -60,12 +53,9 @@ export function AppShell({
 					</nav>
 
 					<div className="flex items-center gap-2">
-						<span className={cn('hidden rounded-full border px-2.5 py-1 text-xs font-semibold sm:inline-flex', wsClass(status))}>
-							WS {status}
-						</span>
 						<div className="hidden text-right sm:block">
 							<p className="max-w-40 truncate text-xs font-semibold text-slate-100">{user?.displayName ?? user?.email}</p>
-							<p className="text-[11px] capitalize text-slate-400">{user?.role?.replace('_', ' ')}</p>
+							<p className="text-[11px] text-slate-400">{roleLabel(user?.role)}</p>
 						</div>
 						<button
 							type="button"

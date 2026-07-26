@@ -2,6 +2,7 @@
 
 import { useSharedWebSocket } from '@/context/WebSocketContext';
 import { normalizeAnnotation, normalizeContradiction } from '@/lib/api';
+import { contradictionTypeLabel } from '@/lib/labels';
 import type { Annotation, Contradiction } from '@/types/api';
 import { useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -68,7 +69,7 @@ export function useCollectionRoom(
 			on('contradiction:new', (payload) => {
 				const c = normalizeContradiction(payload as Parameters<typeof normalizeContradiction>[0]);
 				const icon = SEVERITY_ICON[c.severity] ?? '⚠️';
-				toast(`${icon} ${c.contradictionType?.replace(/_/g, ' ') ?? 'Contradiction'} detected`);
+				toast(`${icon} ${contradictionTypeLabel(c.contradictionType)} detected`);
 				callbacksRef.current.onContradictionNew?.(c);
 			}),
 			on('scan:started', (payload) => callbacksRef.current.onScanStarted?.(payload)),

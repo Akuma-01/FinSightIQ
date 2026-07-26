@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { collections as collectionsAPI } from '@/lib/api';
+import { chunkingStrategyLabel } from '@/lib/labels';
 import type { Collection, CollectionSummary } from '@/types/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -91,58 +92,58 @@ export default function CollectionsPage() {
 				</button>
 			)}
 		>
-				{error && (
-					<div className="mb-6 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-200">
-						{error}
-					</div>
-				)}
+			{error && (
+				<div className="mb-6 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-200">
+					{error}
+				</div>
+			)}
 
-				{collections.length === 0 ? (
-					<EmptyState
-						title="No collections yet"
-						description={canCreate ? 'Create one to start ingesting RBI, SEBI, SEC, or local regulatory documents.' : 'Ask an admin or analyst to add you to a collection.'}
-						action={canCreate && (
-							<button
-								onClick={() => setShowCreate(true)}
-								className="rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white hover:bg-blue-400"
-							>
-								Create collection
-							</button>
-						)}
-					/>
-				) : (
-					<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-						{collections.map((collection) => (
-							<Link
-								key={collection.id}
-								href={`/collections/${collection.id}`}
-								className="group rounded-3xl border border-slate-700 bg-slate-900/85 p-5 shadow-lg shadow-slate-950/20 transition hover:-translate-y-0.5 hover:border-blue-500/60 hover:bg-slate-900"
-							>
-								<div className="flex items-start justify-between gap-3">
-									<div>
-										<h3 className="font-semibold text-white group-hover:text-blue-200">{collection.name}</h3>
-										<p className="mt-1 text-xs text-slate-400">
-											{collection.chunkingStrategy} · {collection.documentCount} docs
-										</p>
-									</div>
-									{collection.archived && (
-										<span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
-											Archived
-										</span>
-									)}
+			{collections.length === 0 ? (
+				<EmptyState
+					title="No collections yet"
+					description={canCreate ? 'Create one to start ingesting RBI, SEBI, SEC, or local regulatory documents.' : 'Ask an admin or analyst to add you to a collection.'}
+					action={canCreate && (
+						<button
+							onClick={() => setShowCreate(true)}
+							className="rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white hover:bg-blue-400"
+						>
+							Create collection
+						</button>
+					)}
+				/>
+			) : (
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+					{collections.map((collection) => (
+						<Link
+							key={collection.id}
+							href={`/collections/${collection.id}`}
+							className="group rounded-3xl border border-slate-700 bg-slate-900/85 p-5 shadow-lg shadow-slate-950/20 transition hover:-translate-y-0.5 hover:border-blue-500/60 hover:bg-slate-900"
+						>
+							<div className="flex items-start justify-between gap-3">
+								<div>
+									<h3 className="font-semibold text-white group-hover:text-blue-200">{collection.name}</h3>
+									<p className="mt-1 text-xs text-slate-400">
+										{chunkingStrategyLabel(collection.chunkingStrategy)} · {collection.documentCount} docs
+									</p>
 								</div>
+								{collection.archived && (
+									<span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
+										Archived
+									</span>
+								)}
+							</div>
 
-								<div className="mt-4">
-									{summaries[collection.id] ? (
-										<SummaryBadges summary={summaries[collection.id]} />
-									) : (
-										<span className="text-xs text-slate-500">Summary unavailable</span>
-									)}
-								</div>
-							</Link>
-						))}
-					</div>
-				)}
+							<div className="mt-4">
+								{summaries[collection.id] ? (
+									<SummaryBadges summary={summaries[collection.id]} />
+								) : (
+									<span className="text-xs text-slate-500">Summary unavailable</span>
+								)}
+							</div>
+						</Link>
+					))}
+				</div>
+			)}
 
 			{showCreate && (
 				<CreateCollectionModal

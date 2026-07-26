@@ -1,15 +1,12 @@
 'use client';
 
+import { useAuth } from '@/context/AuthContext';
 import { collections } from '@/lib/api';
+import { CHUNKING_STRATEGY_OPTIONS, chunkingStrategyLabel } from '@/lib/labels';
 import type { Collection } from '@/types/api';
 import { useState } from 'react';
 
-const STRATEGIES = [
-	{ value: 'section_aware', label: 'Section aware' },
-	{ value: 'sentence', label: 'Sentence' },
-	{ value: 'fixed_512', label: 'Fixed 512' },
-	{ value: 'fixed_256', label: 'Fixed 256' },
-];
+const DEFAULT_STRATEGY = 'section_aware';
 
 export function CreateCollectionModal({
 	token,
@@ -20,8 +17,11 @@ export function CreateCollectionModal({
 	onCreated: (collection: Collection) => void;
 	onClose: () => void;
 }) {
+	const { user } = useAuth();
+	const canTuneRetrieval = user?.role === 'admin' || user?.role === 'researcher';
 	const [name, setName] = useState('');
-	const [chunkingStrategy, setChunkingStrategy] = useState('section_aware');
+	const [chunkingStrategy, setChunkingStrategy] = useState(DEFAULT_STRATEGY);
+	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [error, setError] = useState('');
 	const [loading, setLoading] = useState(false);
 
@@ -61,20 +61,38 @@ export function CreateCollectionModal({
 					/>
 				</label>
 
-				<label className="mt-4 block text-sm font-bold text-slate-200">
-					Chunking strategy
-					<select
-						value={chunkingStrategy}
-						onChange={(event) => setChunkingStrategy(event.target.value)}
-						className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-					>
-						{STRATEGIES.map((strategy) => (
-							<option key={strategy.value} value={strategy.value}>
-								{strategy.label}
-							</option>
-						))}
-					</select>
-				</label>
+				{canTuneRetrieval && (
+					<div className="mt-4">
+						<button
+							type="button"
+							onClick={() => setShowAdvanced((current) => !current)}
+							className="text-xs font-bold uppercase tracking-wide text-slate-400 hover:text-slate-200"
+						>
+							{showAdvanced ? '− Hide advanced options' : '+ Advanced options'}
+						</button>
+
+						{showAdvanced && (
+							<label className="mt-3 block text-sm font-bold text-slate-200">
+								Chunking strategy
+								<select
+									value={chunkingStrategy}
+									onChange={(event) => setChunkingStrategy(event.target.value)}
+									className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+								>
+									{CHUNKING_STRATEGY_OPTIONS.map((strategy) => (
+										<option key={strategy} value={strategy}>
+											{chunkingStrategyLabel(strategy)}
+										</option>
+									))}
+								</select>
+								<p className="mt-1 text-xs font-normal normal-case text-slate-500">
+									Controls how documents are split before retrieval. Leave this on{' '}
+									{chunkingStrategyLabel(DEFAULT_STRATEGY)} unless you&apos;re benchmarking retrieval quality.
+								</p>
+							</label>
+						)}
+					</div>
+				)}
 
 				{error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 

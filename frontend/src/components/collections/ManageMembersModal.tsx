@@ -1,6 +1,7 @@
 'use client';
 
 import { collections as collectionsAPI } from '@/lib/api';
+import { roleLabel } from '@/lib/labels';
 import type { CollectionMember } from '@/types/api';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -167,7 +168,7 @@ export function ManageMembersModal({
 										<p className="truncate text-xs text-slate-500">{member.email}</p>
 										<p className="truncate text-[11px] text-slate-600">{member.id}</p>
 									</div>
-									<span className="text-slate-300">{member.role.replace('_', ' ')}</span>
+									<span className="text-slate-300">{roleLabel(member.role)}</span>
 									<span className="text-blue-200">{member.accessRole}</span>
 									<div className="text-right">
 										<button

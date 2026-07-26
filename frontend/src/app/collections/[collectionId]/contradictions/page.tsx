@@ -2,9 +2,9 @@
 
 import { ContradictionCard } from '@/components/contradictions/ContradictionCard';
 import { AppShell } from '@/components/layout/AppShell';
+import { StaleReferenceList } from '@/components/stale/StaleReferenceList';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { MetricCard } from '@/components/ui/MetricCard';
-import { StaleReferenceList } from '@/components/stale/StaleReferenceList';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
@@ -113,78 +113,90 @@ export default function ContradictionsPage({
 		<AppShell
 			title="Contradiction dashboard"
 			eyebrow="Risk review"
-			description={`${contradictions.length} total · ${unresolved} unresolved · WS ${wsStatus}`}
+			description={`${contradictions.length} total · ${unresolved} unresolved`}
 			backHref={`/collections/${collectionId}`}
 			backLabel="Back to collection"
 			maxWidth="max-w-7xl"
 			actions={(
-					<button
-						type="button"
-						onClick={startScan}
-						disabled={scanning}
-						className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400 disabled:opacity-50"
-					>
-						{scanning ? 'Scanning…' : 'Run full scan'}
-					</button>
+				<button
+					type="button"
+					onClick={startScan}
+					disabled={scanning}
+					className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400 disabled:opacity-50"
+				>
+					{scanning ? 'Scanning…' : 'Run full scan'}
+				</button>
 			)}
 		>
 
-				{error && (
-					<div className="mt-6 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-200">
-						{error}
-					</div>
-				)}
-
-				<div className="mt-8 grid gap-4 md:grid-cols-4">
-					<MetricCard label="Critical" value={critical} tone="red" />
-					<MetricCard label="Moderate" value={moderate} tone="amber" />
-					<MetricCard label="Minor" value={minor} tone="blue" />
-					<MetricCard label="Unresolved" value={unresolved} tone="slate" />
+			{error && (
+				<div className="mt-6 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-200">
+					{error}
 				</div>
+			)}
 
-				<div className="mt-6 flex flex-wrap gap-2">
-					{(['all', 'critical', 'moderate', 'minor'] as const).map((option) => (
-						<button
-							key={option}
-							type="button"
-							onClick={() => setSeverity(option)}
-							className={severity === option
-								? 'rounded-full bg-gray-900 px-3 py-1 text-xs font-semibold text-white'
-								: 'rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 ring-1 ring-slate-700 hover:bg-slate-700'}
-						>
-							{option}
-						</button>
-					))}
-				</div>
+			<div className="mt-8 grid gap-4 md:grid-cols-4">
+				<MetricCard label="Critical" value={critical} tone="red" />
+				<MetricCard label="Moderate" value={moderate} tone="amber" />
+				<MetricCard label="Minor" value={minor} tone="blue" />
+				<MetricCard label="Unresolved" value={unresolved} tone="slate" />
+			</div>
 
-				<div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
-					<section className="space-y-3">
-						{filtered.length === 0 ? (
-							<EmptyState title="No contradictions match this filter" description="Change the severity filter or run a scan to populate this dashboard." />
-						) : (
-							filtered.map((contradiction) => (
-								<ContradictionCard
-									key={contradiction.id}
-									contradiction={contradiction}
-									canResolve={canResolve}
-									onResolve={resolveContradiction}
-								/>
-							))
+			<div className="mt-6 flex flex-wrap gap-2">
+				{(['all', 'critical', 'moderate', 'minor'] as const).map((option) => (
+					<button
+						key={option}
+						type="button"
+						onClick={() => setSeverity(option)}
+						className={severity === option
+							? 'rounded-full bg-gray-900 px-3 py-1 text-xs font-semibold text-white'
+							: 'rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 ring-1 ring-slate-700 hover:bg-slate-700'}
+					>
+						{option}
+					</button>
+				))}
+			</div>
+
+			<div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+				<section className="space-y-3">
+					<div className="flex items-center justify-between">
+						<h2 className="text-sm font-bold text-white">Contradictions</h2>
+						{wsStatus === 'connected' && (
+							<span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-300">
+								<span className="relative flex h-2 w-2">
+									<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+									<span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+								</span>
+								Live — new contradictions appear here automatically
+							</span>
 						)}
-					</section>
-
-					<aside>
-						<div className="rounded-3xl border border-slate-700 bg-slate-900/85 p-5 shadow-lg shadow-slate-950/20">
-							<h2 className="mb-3 text-sm font-bold text-white">Stale references</h2>
-							<StaleReferenceList
-								refs={staleRefs}
-								token={token}
+					</div>
+					{filtered.length === 0 ? (
+						<EmptyState title="No contradictions match this filter" description="Change the severity filter or run a scan to populate this dashboard." />
+					) : (
+						filtered.map((contradiction) => (
+							<ContradictionCard
+								key={contradiction.id}
+								contradiction={contradiction}
 								canResolve={canResolve}
-								onResolved={(id) => setStaleRefs((current) => current.map((ref) => ref.id === id ? { ...ref, isResolved: true } : ref))}
+								onResolve={resolveContradiction}
 							/>
-						</div>
-					</aside>
-				</div>
+						))
+					)}
+				</section>
+
+				<aside>
+					<div className="rounded-3xl border border-slate-700 bg-slate-900/85 p-5 shadow-lg shadow-slate-950/20">
+						<h2 className="mb-3 text-sm font-bold text-white">Stale references</h2>
+						<StaleReferenceList
+							refs={staleRefs}
+							token={token}
+							canResolve={canResolve}
+							onResolved={(id) => setStaleRefs((current) => current.map((ref) => ref.id === id ? { ...ref, isResolved: true } : ref))}
+						/>
+					</div>
+				</aside>
+			</div>
 		</AppShell>
 	);
 }

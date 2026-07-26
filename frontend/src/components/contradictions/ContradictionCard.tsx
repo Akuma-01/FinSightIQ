@@ -1,4 +1,5 @@
 import { cn } from '@/lib/cn';
+import { contradictionTypeLabel } from '@/lib/labels';
 import { theme } from '@/lib/theme';
 import type { Contradiction } from '@/types/api';
 import { useState } from 'react';
@@ -48,7 +49,7 @@ export function ContradictionCard({ contradiction, canResolve = false, onResolve
 						{contradiction.severity}
 					</span>
 					<span className="text-xs font-medium text-slate-300">
-						{contradiction.contradictionType.replace(/_/g, ' ')}
+						{contradictionTypeLabel(contradiction.contradictionType)}
 					</span>
 				</div>
 				{resolved && (
