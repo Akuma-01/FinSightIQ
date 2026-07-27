@@ -9,12 +9,11 @@ export default function Home() {
 	const { token, loading } = useAuth();
 	const router = useRouter();
 
-	// Signed-in visitors skip the pitch and go straight to their workspace.
-	// Signed-out visitors see the explainer below instead of an immediate
-	// redirect to a bare login form.
+	// Signed-in visitors begin with a clear next step rather than landing in a
+	// technical workspace with no context.
 	useEffect(() => {
 		if (loading || !token) return;
-		router.replace('/collections');
+		router.replace('/welcome');
 	}, [loading, router, token]);
 
 	if (loading || token) {

@@ -83,7 +83,10 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS original_name TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS size_bytes BIGINT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 UPDATE documents SET original_name = filename WHERE original_name IS NULL;
+ALTER TABLE documents ALTER COLUMN original_name SET NOT NULL;
+
 UPDATE documents SET mime_type = 'application/octet-stream' WHERE mime_type IS NULL;
 UPDATE documents SET size_bytes = 0 WHERE size_bytes IS NULL;
 

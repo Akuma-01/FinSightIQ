@@ -10,8 +10,8 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
-import { ai, documents as documentsAPI } from '@/lib/api';
-import type { Document } from '@/types/api';
+import { ai, collections as collectionsAPI, documents as documentsAPI } from '@/lib/api';
+import type { Collection, Document } from '@/types/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
@@ -25,6 +25,7 @@ export default function CollectionDetailPage({
 	const { collectionId } = use(params);
 	const { token, user, loading: authLoading } = useAuth();
 	const router = useRouter();
+	const [collection, setCollection] = useState<Collection | null>(null);
 	const [documents, setDocuments] = useState<Document[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
@@ -38,6 +39,9 @@ export default function CollectionDetailPage({
 	const [collectionSummary, setCollectionSummary] = useState('');
 	const [summarizing, setSummarizing] = useState(false);
 	const [retryingId, setRetryingId] = useState<string | null>(null);
+	const [archiveLoading, setArchiveLoading] = useState(false);
+	const [deleteLoading, setDeleteLoading] = useState(false);
+	const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
 	useEffect(() => {
 		if (authLoading) return;
@@ -47,12 +51,18 @@ export default function CollectionDetailPage({
 		}
 
 		let cancelled = false;
-		documentsAPI.list(token, collectionId)
-			.then(({ documents }) => {
-				if (!cancelled) setDocuments(documents);
+		Promise.all([
+			collectionsAPI.get(token, collectionId),
+			documentsAPI.list(token, collectionId),
+		])
+			.then(([collectionResult, documentsResult]) => {
+				if (!cancelled) {
+					setCollection(collectionResult.collection);
+					setDocuments(documentsResult.documents);
+				}
 			})
 			.catch((err) => {
-				if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load documents');
+				if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load collection');
 			})
 			.finally(() => {
 				if (!cancelled) setLoading(false);
@@ -131,8 +141,10 @@ export default function CollectionDetailPage({
 	const readyCount = documents.filter((doc) => doc.status === 'ready').length;
 	const processingCount = documents.filter((doc) => doc.status === 'processing').length;
 	const failedCount = documents.filter((doc) => doc.status === 'failed').length;
-	const canUpload = user?.role === 'admin' || user?.role === 'analyst';
+	const canUpload = (user?.role === 'admin' || user?.role === 'analyst') && !collection?.archived;
 	const canRetry = user?.role === 'admin';
+	const isAdmin = user?.role === 'admin';
+	const canDelete = isAdmin && Boolean(collection?.name) && deleteConfirmation.trim() === collection?.name;
 
 	async function runSearch() {
 		if (!token || !query.trim()) return;
@@ -189,11 +201,39 @@ export default function CollectionDetailPage({
 		}
 	}
 
+	async function toggleArchiveCollection() {
+		if (!token || !collection) return;
+		const nextArchived = !collection.archived;
+		setArchiveLoading(true);
+		try {
+			const result = await collectionsAPI.update(token, collectionId, { archived: nextArchived });
+			setCollection(result.collection);
+			toast.success(nextArchived ? 'Collection archived' : 'Collection restored');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Could not update collection');
+		} finally {
+			setArchiveLoading(false);
+		}
+	}
+
+	async function deleteCollection() {
+		if (!token || !collection || !canDelete) return;
+		setDeleteLoading(true);
+		try {
+			await collectionsAPI.remove(token, collectionId);
+			toast.success('Collection deleted');
+			router.replace('/collections');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Could not delete collection');
+			setDeleteLoading(false);
+		}
+	}
+
 	return (
 		<AppShell
 			title="Collection workspace"
 			eyebrow="Document intelligence"
-			description={`${documents.length} documents · ${readyCount} ready · ${processingCount} processing · ${failedCount} failed`}
+			description={`${collection?.name ?? 'Collection'} · ${documents.length} documents · ${readyCount} ready · ${processingCount} processing · ${failedCount} failed${collection?.archived ? ' · archived' : ''}`}
 			backHref="/collections"
 			backLabel="Back to collections"
 			maxWidth="max-w-7xl"
@@ -363,6 +403,57 @@ export default function CollectionDetailPage({
 						</ul>
 					)}
 				</div>
+				{isAdmin && collection && (
+					<section className="mt-6 rounded-3xl border border-red-500/30 bg-red-950/30 p-6 shadow-lg shadow-red-950/10">
+						<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+							<div>
+								<p className="text-xs font-bold uppercase tracking-[0.22em] text-red-300">Danger zone</p>
+								<h2 className="mt-2 text-base font-bold text-white">Collection lifecycle</h2>
+								<p className="mt-2 max-w-2xl text-sm leading-6 text-red-100/80">
+									Archive blocks new document uploads while keeping the collection available for review.
+									Delete permanently removes the collection and cascades its documents, chunks, contradictions,
+									annotations, stale references, members, and stored files.
+								</p>
+							</div>
+							<button
+								type="button"
+								onClick={toggleArchiveCollection}
+								disabled={archiveLoading}
+								className="rounded-xl border border-amber-300/40 bg-amber-400/10 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-400/20 disabled:opacity-50"
+							>
+								{archiveLoading
+									? 'Updating…'
+									: collection.archived ? 'Restore collection' : 'Archive collection'}
+							</button>
+						</div>
+
+						<div className="mt-5 rounded-2xl border border-red-400/30 bg-slate-950/70 p-4">
+							<label htmlFor="delete-confirmation" className="text-sm font-semibold text-red-100">
+								Type <span className="font-mono text-red-200">{collection.name}</span> to confirm deletion
+							</label>
+							<div className="mt-3 flex flex-col gap-3 sm:flex-row">
+								<input
+									id="delete-confirmation"
+									value={deleteConfirmation}
+									onChange={(event) => setDeleteConfirmation(event.target.value)}
+									placeholder={collection.name}
+									className="min-w-0 flex-1 rounded-xl border border-red-400/30 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-red-300 focus:ring-2 focus:ring-red-500/20"
+								/>
+								<button
+									type="button"
+									onClick={deleteCollection}
+									disabled={!canDelete || deleteLoading}
+									className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+								>
+									{deleteLoading ? 'Deleting…' : 'Delete permanently'}
+								</button>
+							</div>
+							<p className="mt-2 text-xs text-red-200/70">
+								This action cannot be undone. Use archive if you only want to hide or freeze the workspace.
+							</p>
+						</div>
+					</section>
+				)}
 			{showUpload && (
 				<UploadModal
 					token={token}

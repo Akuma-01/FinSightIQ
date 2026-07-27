@@ -20,7 +20,7 @@ export default function LoginPage() {
 		setLoading(true);
 		try {
 			await login(email, password);
-			router.replace('/collections');
+			router.replace('/welcome');
 		} catch (err) {
 			setError(err instanceof APIError ? err.message : 'Login failed');
 		} finally {
@@ -35,12 +35,12 @@ export default function LoginPage() {
 					<div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-sm font-black text-slate-950">FI</div>
 					<h1 className="mt-10 text-4xl font-black tracking-tight">Financial document intelligence, in real time.</h1>
 					<p className="mt-4 max-w-md text-sm leading-6 text-slate-300">
-						Ingest regulatory PDFs, search obligations, summarize documents, and detect contradictions with live WebSocket updates.
+						Find material conflicts across regulatory documents before they become a compliance issue.
 					</p>
 					<div className="mt-10 grid gap-3 text-sm">
-						<div className="rounded-2xl border border-white/10 bg-white/5 p-4">RBI / SEBI / SEC document workflows</div>
-						<div className="rounded-2xl border border-white/10 bg-white/5 p-4">RAG search, summaries, contradictions</div>
-						<div className="rounded-2xl border border-white/10 bg-white/5 p-4">Research benchmarks and audit logs</div>
+						<div className="rounded-2xl border border-white/10 bg-white/5 p-4">Bring policy and regulatory documents together</div>
+						<div className="rounded-2xl border border-white/10 bg-white/5 p-4">See conflicts explained in plain language</div>
+						<div className="rounded-2xl border border-white/10 bg-white/5 p-4">Verify every finding against its source</div>
 					</div>
 				</div>
 

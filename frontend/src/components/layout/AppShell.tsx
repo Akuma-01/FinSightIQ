@@ -33,23 +33,21 @@ export function AppShell({
 		<main className={cn('min-h-screen', theme.appBg)}>
 			<header className={cn('sticky top-0 z-30 border-b', theme.surface.header)}>
 				<div className={`mx-auto flex ${maxWidth} items-center justify-between gap-4 px-4 py-3`}>
-					<Link href="/collections" className="flex items-center gap-3">
+					<Link href="/welcome" className="flex items-center gap-3">
 						<div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-500 text-sm font-black text-white shadow-sm shadow-blue-950/40">FI</div>
 						<div>
 							<p className="text-sm font-bold tracking-tight text-white">FinSightIQ</p>
-							<p className="text-xs text-slate-300">Regulatory intelligence workspace</p>
+							<p className="text-xs text-slate-300">Compliance intelligence</p>
 						</div>
 					</Link>
 
 					<nav className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 md:flex">
-						<Link href="/collections" className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
-							Collections
+						<Link href="/welcome" className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
+							Overview
 						</Link>
-						{user?.role === 'admin' && (
-							<Link href="/admin" className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
-								Admin
-							</Link>
-						)}
+						<Link href="/collections" className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
+							Workspaces
+						</Link>
 					</nav>
 
 					<div className="flex items-center gap-2">
