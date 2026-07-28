@@ -6,14 +6,13 @@ import { UploadModal } from '@/components/documents/UploadModal';
 import { ManageMembersModal } from '@/components/collections/ManageMembersModal';
 import { AppShell } from '@/components/layout/AppShell';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { MetricCard } from '@/components/ui/MetricCard';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
 import { ai, collections as collectionsAPI, documents as documentsAPI } from '@/lib/api';
 import type { Collection, Document } from '@/types/api';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 
@@ -25,6 +24,8 @@ export default function CollectionDetailPage({
 	const { collectionId } = use(params);
 	const { token, user, loading: authLoading } = useAuth();
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const tourActive = searchParams.get('tour') === '1';
 	const [collection, setCollection] = useState<Collection | null>(null);
 	const [documents, setDocuments] = useState<Document[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -139,8 +140,6 @@ export default function CollectionDetailPage({
 	if (!token) return null;
 
 	const readyCount = documents.filter((doc) => doc.status === 'ready').length;
-	const processingCount = documents.filter((doc) => doc.status === 'processing').length;
-	const failedCount = documents.filter((doc) => doc.status === 'failed').length;
 	const canUpload = (user?.role === 'admin' || user?.role === 'analyst') && !collection?.archived;
 	const canRetry = user?.role === 'admin';
 	const isAdmin = user?.role === 'admin';
@@ -231,59 +230,20 @@ export default function CollectionDetailPage({
 
 	return (
 		<AppShell
-			title="Collection workspace"
-			eyebrow="Document intelligence"
-			description={`${collection?.name ?? 'Collection'} · ${documents.length} documents · ${readyCount} ready · ${processingCount} processing · ${failedCount} failed${collection?.archived ? ' · archived' : ''}`}
+			title={collection?.name ?? 'Workspace'}
+			eyebrow="Workspace"
+			description={collection?.archived ? 'This workspace is archived and available for review.' : 'Review risks, verify the evidence, and keep your documents in one place.'}
 			backHref="/collections"
 			backLabel="Back to collections"
 			maxWidth="max-w-7xl"
 			actions={(
 				<>
-					{canUpload && (
-						<>
-							<button
-								onClick={() => setShowUpload(true)}
-								className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
-							>
-								Upload
-							</button>
-							<button
-								onClick={() => setShowEdgar(true)}
-								className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
-							>
-								Fetch EDGAR
-							</button>
-						</>
-					)}
-					{user?.role === 'admin' && (
-						<button
-							type="button"
-							onClick={() => setShowMembers(true)}
-							className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
-						>
-							Members
-						</button>
-					)}
 					<Link
-						href={`/collections/${collectionId}/compare`}
+						href={`/collections/${collectionId}/contradictions${tourActive ? '?tour=1' : ''}`}
 						className="rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400"
 					>
-						Compare
+						Review risks
 					</Link>
-					<Link
-						href={`/collections/${collectionId}/contradictions`}
-						className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
-					>
-						Contradictions
-					</Link>
-					{(user?.role === 'admin' || user?.role === 'researcher') && (
-						<Link
-							href={`/collections/${collectionId}/research`}
-							className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15"
-						>
-							Research
-						</Link>
-					)}
 				</>
 			)}
 		>
@@ -294,16 +254,18 @@ export default function CollectionDetailPage({
 					</div>
 				)}
 
-				<div className="mt-8 grid gap-4 md:grid-cols-3">
-					<MetricCard label="Ready" value={readyCount} tone="green" helper="Available for search and scans" />
-					<MetricCard label="Processing" value={processingCount} tone="blue" helper="Ingestion jobs in progress" />
-					<MetricCard label="Failed" value={failedCount} tone="red" helper="Admin can retry failed jobs" />
-				</div>
+				{tourActive && (
+					<section className="mt-8 rounded-3xl border border-blue-400/30 bg-blue-500/10 p-6">
+						<p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200">Step 1 of 3 · Start with the outcome</p>
+						<h2 className="mt-2 text-lg font-bold text-white">See the most important risk first.</h2>
+						<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">FinSightIQ compares your documents, identifies conflicts, and keeps the evidence beside every finding. Open Risk review to see what needs attention.</p>
+					</section>
+				)}
 
 				<div className="mt-6 grid gap-4 lg:grid-cols-2">
 					<section className="rounded-3xl border border-slate-700 bg-slate-900/85 p-6 shadow-lg shadow-slate-950/20">
-						<h2 className="text-base font-bold text-white">Semantic search</h2>
-						<p className="mt-1 text-xs text-slate-400">Ask a question over this collection using the RAG endpoint.</p>
+						<h2 className="text-base font-bold text-white">Ask about these documents</h2>
+						<p className="mt-1 text-xs text-slate-400">Get a clear answer grounded in the documents in this workspace.</p>
 						<div className="mt-4 flex gap-2">
 							<input
 								value={query}
@@ -320,13 +282,13 @@ export default function CollectionDetailPage({
 								disabled={searching || !query.trim()}
 								className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-bold text-white hover:bg-blue-400 disabled:opacity-50"
 							>
-								{searching ? 'Searching…' : 'Search'}
+								{searching ? 'Finding answer…' : 'Ask'}
 							</button>
 						</div>
 						{searchAnswer && (
 							<div className="mt-4 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
 								<p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{searchAnswer}</p>
-								<p className="mt-3 text-xs text-blue-200">{searchSources.length} source chunks returned</p>
+								<p className="mt-3 text-xs text-blue-200">Based on {searchSources.length} source {searchSources.length === 1 ? 'passage' : 'passages'}</p>
 							</div>
 						)}
 					</section>
@@ -334,8 +296,8 @@ export default function CollectionDetailPage({
 					<section className="rounded-3xl border border-slate-700 bg-slate-900/85 p-6 shadow-lg shadow-slate-950/20">
 						<div className="flex items-start justify-between gap-3">
 							<div>
-								<h2 className="text-base font-bold text-white">Collection summary</h2>
-								<p className="mt-1 text-xs text-slate-400">Generate a concise AI summary for demo/review.</p>
+						<h2 className="text-base font-bold text-white">Workspace briefing</h2>
+						<p className="mt-1 text-xs text-slate-400">Get a concise overview before you begin your review.</p>
 							</div>
 							<button
 								type="button"
@@ -343,30 +305,37 @@ export default function CollectionDetailPage({
 								disabled={summarizing || readyCount === 0}
 								className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-white/10 disabled:opacity-50"
 							>
-								{summarizing ? 'Summarizing…' : 'Summarize'}
+								{summarizing ? 'Preparing…' : 'Create briefing'}
 							</button>
 						</div>
 						{collectionSummary ? (
 							<p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-100">{collectionSummary}</p>
 						) : (
 							<p className="mt-4 rounded-2xl border border-dashed border-slate-600 p-4 text-sm text-slate-400">
-								No summary generated yet.
+								Create a briefing to see a concise overview of this workspace.
 							</p>
 						)}
 					</section>
 				</div>
 
-				<div className="mt-6 overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/85 shadow-lg shadow-slate-950/20">
-					<div className="flex items-center justify-between gap-4 border-b border-slate-700 px-4 py-3">
-						<h2 className="text-sm font-bold text-white">Documents</h2>
-						<p className="text-xs text-slate-400">PDF and plain text uploads are processed asynchronously.</p>
-					</div>
+				<details className="mt-6 overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/85 shadow-lg shadow-slate-950/20">
+					<summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-4 text-sm font-bold text-white">
+						<span>Documents and workspace tools</span>
+						<span className="text-xs font-normal text-slate-400">{documents.length} documents · Manage uploads and comparisons</span>
+					</summary>
+					<div className="border-t border-slate-700">
+						<div className="flex flex-wrap items-center gap-2 px-4 py-3">
+							{canUpload && <button type="button" onClick={() => setShowUpload(true)} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Add documents</button>}
+							{canUpload && <button type="button" onClick={() => setShowEdgar(true)} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Import SEC filing</button>}
+							<Link href={`/collections/${collectionId}/compare`} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Compare documents</Link>
+							{user?.role === 'admin' && <button type="button" onClick={() => setShowMembers(true)} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Manage access</button>}
+						</div>
 
 					{documents.length === 0 ? (
 						<div className="p-5">
 							<EmptyState
 								title="No documents yet"
-								description="Upload a PDF/text file or fetch a SEC filing to begin the demo workflow."
+								description="Add PDFs or text files when you are ready to bring more documents into this workspace."
 							/>
 						</div>
 					) : (
@@ -402,9 +371,12 @@ export default function CollectionDetailPage({
 							))}
 						</ul>
 					)}
-				</div>
+					</div>
+				</details>
 				{isAdmin && collection && (
-					<section className="mt-6 rounded-3xl border border-red-500/30 bg-red-950/30 p-6 shadow-lg shadow-red-950/10">
+					<details className="mt-6 rounded-3xl border border-red-500/30 bg-red-950/30 shadow-lg shadow-red-950/10">
+						<summary className="cursor-pointer px-6 py-4 text-sm font-bold text-red-100">Workspace administration</summary>
+						<section className="border-t border-red-500/20 p-6">
 						<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 							<div>
 								<p className="text-xs font-bold uppercase tracking-[0.22em] text-red-300">Danger zone</p>
@@ -452,7 +424,8 @@ export default function CollectionDetailPage({
 								This action cannot be undone. Use archive if you only want to hide or freeze the workspace.
 							</p>
 						</div>
-					</section>
+						</section>
+					</details>
 				)}
 			{showUpload && (
 				<UploadModal

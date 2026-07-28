@@ -81,7 +81,7 @@ export function ContradictionCard({ contradiction, canResolve = false, onResolve
 					disabled={resolving}
 					className="mt-4 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
 				>
-					{resolving ? 'Resolving…' : 'Mark as resolved'}
+					{resolving ? 'Saving…' : 'Mark reviewed'}
 				</button>
 			)}
 		</article>

@@ -117,9 +117,9 @@ export default function ComparePage({
 
 	return (
 		<AppShell
-			title="Compare two documents"
-			eyebrow="Targeted scan"
-			description="Select two ready documents and stream contradiction results in real time."
+			title="Compare documents"
+			eyebrow="Document review"
+			description="Choose two available documents to check them for conflicting requirements."
 			backHref={`/collections/${collectionId}`}
 			backLabel="Back to collection"
 		>
@@ -127,13 +127,13 @@ export default function ComparePage({
 					<div className="mb-5 flex items-center justify-between gap-3">
 						<div>
 							<h2 className="text-base font-bold text-white">Document pair</h2>
-							<p className="mt-1 text-xs text-slate-400">Only ready documents are shown here.</p>
+							<p className="mt-1 text-xs text-slate-400">Only documents that are ready to review are shown here.</p>
 						</div>
 						<span className={wsStatus === 'connected'
 							? 'rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-200'
 							: 'rounded-full border border-slate-600 bg-slate-800 px-3 py-1 text-xs font-bold text-slate-300'}
 						>
-							WS {wsStatus}
+							{wsStatus === 'connected' ? 'Ready to compare' : 'Connecting…'}
 						</span>
 					</div>
 					<div className="grid gap-4 md:grid-cols-2">
@@ -173,11 +173,11 @@ export default function ComparePage({
 							className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400 disabled:opacity-50"
 						>
 							{scanning && <Spinner size="sm" />}
-							{scanning ? 'Scanning…' : 'Compare documents'}
+							{scanning ? 'Checking…' : 'Check for conflicts'}
 						</button>
 						{scanMessage && <span className="text-sm text-slate-300">{scanMessage}</span>}
 						{wsStatus !== 'connected' && (
-							<span className="text-sm text-amber-300">Connect WebSocket before scanning.</span>
+							<span className="text-sm text-amber-300">Connecting to live updates. Please try again in a moment.</span>
 						)}
 					</div>
 
@@ -207,8 +207,8 @@ export default function ComparePage({
 						))
 					) : (
 						<EmptyState
-							title={scanning ? 'Waiting for live events' : 'No comparison results yet'}
-							description={scanning ? 'Contradictions will appear here as the scan emits WebSocket events.' : 'Choose two documents and run a targeted scan to populate this panel.'}
+							title={scanning ? 'Checking the documents' : 'No findings yet'}
+							description={scanning ? 'Findings will appear here as they are ready.' : 'Choose two documents and check them for conflicts.'}
 						/>
 					)}
 				</div>

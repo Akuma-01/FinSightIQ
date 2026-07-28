@@ -7,7 +7,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { collections as collectionsAPI } from '@/lib/api';
-import { chunkingStrategyLabel } from '@/lib/labels';
 import type { Collection, CollectionSummary } from '@/types/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -80,15 +79,15 @@ export default function CollectionsPage() {
 
 	return (
 		<AppShell
-			title="Collections"
-			eyebrow="Workspace"
-			description="Upload regulatory documents, run AI analysis, and review contradictions from one workspace."
+			title="Your workspaces"
+			eyebrow="Compliance intelligence"
+			description="Choose a workspace to review risks and verify the evidence behind each finding."
 			actions={canCreate && (
 				<button
 					onClick={() => setShowCreate(true)}
 					className="rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400"
 				>
-					+ New Collection
+					+ New workspace
 				</button>
 			)}
 		>
@@ -100,14 +99,14 @@ export default function CollectionsPage() {
 
 			{collections.length === 0 ? (
 				<EmptyState
-					title="No collections yet"
-					description={canCreate ? 'Create one to start ingesting RBI, SEBI, SEC, or local regulatory documents.' : 'Ask an admin or analyst to add you to a collection.'}
+					title="No workspaces yet"
+					description={canCreate ? 'Create a workspace for the documents your team needs to review together.' : 'Ask an administrator or analyst to add you to a workspace.'}
 					action={canCreate && (
 						<button
 							onClick={() => setShowCreate(true)}
 							className="rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white hover:bg-blue-400"
 						>
-							Create collection
+							Create workspace
 						</button>
 					)}
 				/>
@@ -123,7 +122,7 @@ export default function CollectionsPage() {
 								<div>
 									<h3 className="font-semibold text-white group-hover:text-blue-200">{collection.name}</h3>
 									<p className="mt-1 text-xs text-slate-400">
-										{chunkingStrategyLabel(collection.chunkingStrategy)} · {collection.documentCount} docs
+									{collection.documentCount} {collection.documentCount === 1 ? 'document' : 'documents'}
 									</p>
 								</div>
 								{collection.archived && (

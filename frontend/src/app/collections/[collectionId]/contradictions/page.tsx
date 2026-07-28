@@ -10,7 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
 import { ai } from '@/lib/api';
 import type { Contradiction, StaleReference } from '@/types/api';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 
@@ -24,6 +24,8 @@ export default function ContradictionsPage({
 	const { collectionId } = use(params);
 	const { token, user, loading: authLoading } = useAuth();
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const tourActive = searchParams.get('tour') === '1';
 	const [contradictions, setContradictions] = useState<Contradiction[]>([]);
 	const [staleRefs, setStaleRefs] = useState<StaleReference[]>([]);
 	const [severity, setSeverity] = useState<SeverityFilter>('all');
@@ -111,9 +113,9 @@ export default function ContradictionsPage({
 
 	return (
 		<AppShell
-			title="Contradiction dashboard"
+			title="Risk review"
 			eyebrow="Risk review"
-			description={`${contradictions.length} total · ${unresolved} unresolved`}
+			description={`${unresolved} open ${unresolved === 1 ? 'risk' : 'risks'} · Review each finding alongside its supporting evidence.`}
 			backHref={`/collections/${collectionId}`}
 			backLabel="Back to collection"
 			maxWidth="max-w-7xl"
@@ -124,7 +126,7 @@ export default function ContradictionsPage({
 					disabled={scanning}
 					className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400 disabled:opacity-50"
 				>
-					{scanning ? 'Scanning…' : 'Run full scan'}
+					{scanning ? 'Checking…' : 'Check for conflicts'}
 				</button>
 			)}
 		>
@@ -133,6 +135,14 @@ export default function ContradictionsPage({
 				<div className="mt-6 rounded-lg border border-red-400/40 bg-red-500/15 px-4 py-3 text-sm text-red-200">
 					{error}
 				</div>
+			)}
+
+			{tourActive && (
+				<section className="mt-6 rounded-3xl border border-blue-400/30 bg-blue-500/10 p-6">
+					<p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200">Steps 2–3 of 3 · Verify, then decide</p>
+					<h2 className="mt-2 text-lg font-bold text-white">Every risk is explained with its evidence.</h2>
+					<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Read the two source statements side by side, then decide whether the finding needs review. Authorised reviewers can mark it resolved once the team has acted.</p>
+				</section>
 			)}
 
 			<div className="mt-8 grid gap-4 md:grid-cols-4">
@@ -160,19 +170,19 @@ export default function ContradictionsPage({
 			<div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
 				<section className="space-y-3">
 					<div className="flex items-center justify-between">
-						<h2 className="text-sm font-bold text-white">Contradictions</h2>
+						<h2 className="text-sm font-bold text-white">Findings</h2>
 						{wsStatus === 'connected' && (
 							<span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-300">
 								<span className="relative flex h-2 w-2">
 									<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
 									<span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
 								</span>
-								Live — new contradictions appear here automatically
+								Live updates enabled
 							</span>
 						)}
 					</div>
 					{filtered.length === 0 ? (
-						<EmptyState title="No contradictions match this filter" description="Change the severity filter or run a scan to populate this dashboard." />
+						<EmptyState title="No risks match this filter" description="Change the filter or check the workspace for conflicts to populate this view." />
 					) : (
 						filtered.map((contradiction) => (
 							<ContradictionCard
@@ -187,7 +197,7 @@ export default function ContradictionsPage({
 
 				<aside>
 					<div className="rounded-3xl border border-slate-700 bg-slate-900/85 p-5 shadow-lg shadow-slate-950/20">
-						<h2 className="mb-3 text-sm font-bold text-white">Stale references</h2>
+						<h2 className="mb-3 text-sm font-bold text-white">References that may need updating</h2>
 						<StaleReferenceList
 							refs={staleRefs}
 							token={token}
