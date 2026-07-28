@@ -58,11 +58,82 @@ export async function createCollection(
 	}
 }
 
+/** Creates an isolated, read-only product tour for one evaluator. */
+export async function createDemoCollection(createdBy: string) {
+	const client = await db.connect();
+	try {
+		await client.query('BEGIN');
+		const existing = await client.query(
+			`SELECT c.id, c.name, c.chunking_strategy, c.archived, c.is_demo, c.created_at,
+			        COUNT(d.id)::int AS document_count
+			 FROM collections c LEFT JOIN documents d ON d.collection_id = c.id
+			 WHERE c.created_by = $1 AND c.is_demo = TRUE
+			 GROUP BY c.id ORDER BY c.created_at DESC LIMIT 1`,
+			[createdBy]
+		);
+		if (existing.rows[0]) {
+			await client.query('COMMIT');
+			return existing.rows[0];
+		}
+
+		const { rows: collections } = await client.query(
+			`INSERT INTO collections (name, description, chunking_strategy, created_by, is_demo)
+			 VALUES ('Sample regulatory update', 'A read-only FinSightIQ product walkthrough.', 'section_aware', $1, TRUE)
+			 RETURNING id, name, chunking_strategy, archived, is_demo, created_at`,
+			[createdBy]
+		);
+		const collection = collections[0];
+		await client.query(
+			`INSERT INTO collection_members (collection_id, user_id, access_role) VALUES ($1, $2, 'viewer')`,
+			[collection.id, createdBy]
+		);
+		await client.query(`CREATE SEQUENCE IF NOT EXISTS "${seqName(collection.id)}"`);
+
+		const [firstDocument, secondDocument] = await Promise.all([
+			client.query(
+				`INSERT INTO documents (collection_id, uploaded_by, filename, original_name, mime_type, size_bytes, doc_type, source, effective_date, raw_text, status)
+				 VALUES ($1, $2, 'Capital Adequacy Circular — March 2024.pdf', 'Capital Adequacy Circular — March 2024.pdf', 'application/pdf', 184320, 'regulatory_circular', 'Sample RBI circular', '2024-03-01', $3, 'ready') RETURNING id`,
+				[collection.id, createdBy, 'Minimum capital adequacy ratio: 9%. This requirement applies to all scheduled commercial banks.']
+			),
+			client.query(
+				`INSERT INTO documents (collection_id, uploaded_by, filename, original_name, mime_type, size_bytes, doc_type, source, effective_date, raw_text, status)
+				 VALUES ($1, $2, 'Capital Requirements Update — November 2024.pdf', 'Capital Requirements Update — November 2024.pdf', 'application/pdf', 197632, 'regulatory_circular', 'Sample RBI circular', '2024-11-01', $3, 'ready') RETURNING id`,
+				[collection.id, createdBy, 'Minimum capital adequacy ratio: 11%. This update applies to all scheduled commercial banks from 1 January 2025.']
+			),
+		]);
+		const docA = firstDocument.rows[0].id;
+		const docB = secondDocument.rows[0].id;
+		await client.query(
+			`INSERT INTO chunks (document_id, collection_id, chunk_index, chunk_text, section_label, chunking_strategy, token_count)
+			 VALUES ($1, $2, 0, $3, 'Capital requirement', 'section_aware', 16),
+			        ($4, $2, 0, $5, 'Capital requirement', 'section_aware', 21)`,
+			[docA, collection.id, 'Minimum capital adequacy ratio: 9%.', docB, 'Minimum capital adequacy ratio: 11%.']
+		);
+		await client.query(
+			`INSERT INTO contradictions (collection_id, doc_a_id, doc_b_id, contradiction_type, severity, claim_a, claim_b, section_a, section_b, explanation, model_used)
+			 VALUES ($1, $2, $3, 'numerical_discrepancy', 'critical', $4, $5, 'Capital requirement', 'Capital requirement', $6, 'FinSightIQ sample data')`,
+			[
+				collection.id, docA, docB,
+				'Minimum capital adequacy ratio: 9%.',
+				'Minimum capital adequacy ratio: 11%, effective 1 January 2025.',
+				'The November update raises the minimum ratio from 9% to 11%. A team following the older circular would use an outdated requirement unless it reviews the newer update.',
+			]
+		);
+		await client.query('COMMIT');
+		return { ...collection, document_count: 2 };
+	} catch (err) {
+		await client.query('ROLLBACK');
+		throw err;
+	} finally {
+		client.release();
+	}
+}
+
 export async function listCollections(user: AuthUser) {
 	// Admins see all; others see only their member collections
 	if (user.role === 'admin') {
 		const { rows } = await db.query(
-			`SELECT c.id, c.name, c.chunking_strategy, c.archived, c.created_at,
+			`SELECT c.id, c.name, c.chunking_strategy, c.archived, c.is_demo, c.created_at,
               COUNT(d.id) AS document_count
        FROM collections c
        LEFT JOIN documents d ON d.collection_id = c.id
@@ -72,7 +143,7 @@ export async function listCollections(user: AuthUser) {
 	}
 
 	const { rows } = await db.query(
-		`SELECT c.id, c.name, c.chunking_strategy, c.archived, c.created_at,
+		`SELECT c.id, c.name, c.chunking_strategy, c.archived, c.is_demo, c.created_at,
             cm.access_role, COUNT(d.id) AS document_count
      FROM collections c
      JOIN collection_members cm ON cm.collection_id = c.id AND cm.user_id = $1

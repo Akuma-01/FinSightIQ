@@ -15,6 +15,14 @@ function getUuidParam(req: Request, name: string): string {
 	return parsed.data;
 }
 
+async function assertFindingIsNotInDemo(table: 'contradictions' | 'stale_references', id: string) {
+	const { rows } = await db.query(
+		`SELECT c.is_demo FROM ${table} f JOIN collections c ON c.id = f.collection_id WHERE f.id = $1`,
+		[id]
+	);
+	if (rows[0]?.is_demo) throw new AppError(403, 'The sample workspace is read-only');
+}
+
 // ── Contradiction ────────────────────────────────────────────────────────────
 
 export const scanCollection = asyncHandler(async (req: Request, res: Response) => {
@@ -88,6 +96,7 @@ export const listContradictions = asyncHandler(async (req: Request, res: Respons
 
 export const resolveContradiction = asyncHandler(async (req: Request, res: Response) => {
 	const contradictionId = getUuidParam(req, 'id');
+	await assertFindingIsNotInDemo('contradictions', contradictionId);
 	const row = await Contradiction.resolveContradiction(
 		contradictionId,
 		req.user!.id,
@@ -106,6 +115,7 @@ export const listStaleRefs = asyncHandler(async (req: Request, res: Response) =>
 
 export const resolveStaleRef = asyncHandler(async (req: Request, res: Response) => {
 	const staleReferenceId = getUuidParam(req, 'id');
+	await assertFindingIsNotInDemo('stale_references', staleReferenceId);
 	const row = await Stale.resolveStaleReference(
 		staleReferenceId,
 		req.user!.id,

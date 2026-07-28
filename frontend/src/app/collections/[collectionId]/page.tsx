@@ -140,7 +140,7 @@ export default function CollectionDetailPage({
 	if (!token) return null;
 
 	const readyCount = documents.filter((doc) => doc.status === 'ready').length;
-	const canUpload = (user?.role === 'admin' || user?.role === 'analyst') && !collection?.archived;
+	const canUpload = (user?.role === 'admin' || user?.role === 'analyst') && !collection?.archived && !collection?.isDemo;
 	const canRetry = user?.role === 'admin';
 	const isAdmin = user?.role === 'admin';
 	const canDelete = isAdmin && Boolean(collection?.name) && deleteConfirmation.trim() === collection?.name;
@@ -232,7 +232,7 @@ export default function CollectionDetailPage({
 		<AppShell
 			title={collection?.name ?? 'Workspace'}
 			eyebrow="Workspace"
-			description={collection?.archived ? 'This workspace is archived and available for review.' : 'Review risks, verify the evidence, and keep your documents in one place.'}
+			description={collection?.isDemo ? 'Read-only sample workspace · Follow the walkthrough to see a real finding and its evidence.' : collection?.archived ? 'This workspace is archived and available for review.' : 'Review risks, verify the evidence, and keep your documents in one place.'}
 			backHref="/collections"
 			backLabel="Back to collections"
 			maxWidth="max-w-7xl"
@@ -373,7 +373,7 @@ export default function CollectionDetailPage({
 					)}
 					</div>
 				</details>
-				{isAdmin && collection && (
+				{isAdmin && collection && !collection.isDemo && (
 					<details className="mt-6 rounded-3xl border border-red-500/30 bg-red-950/30 shadow-lg shadow-red-950/10">
 						<summary className="cursor-pointer px-6 py-4 text-sm font-bold text-red-100">Workspace administration</summary>
 						<section className="border-t border-red-500/20 p-6">

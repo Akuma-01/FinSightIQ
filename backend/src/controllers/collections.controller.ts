@@ -42,6 +42,11 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 	res.status(201).json({ collection });
 });
 
+export const createDemo = asyncHandler(async (req: Request, res: Response) => {
+	const collection = await CollectionsService.createDemoCollection(req.user!.id);
+	res.status(201).json({ collection });
+});
+
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
 	const collectionId = getUuidParam(req, 'id');
 	const collection = await CollectionsService.getCollection(collectionId);

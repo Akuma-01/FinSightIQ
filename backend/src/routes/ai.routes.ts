@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as AI from '../controllers/ai.controller';
 import { verifyJWT } from '../middleware/auth.middleware';
-import { requireCollectionMember } from '../middleware/collection.middleware';
+import { rejectDemoCollectionWrites, requireCollectionMember } from '../middleware/collection.middleware';
 import {
 	contradictRateLimit,
 	searchRateLimit,
@@ -14,10 +14,10 @@ router.use(verifyJWT);
 
 // Contradiction scan
 router.post('/contradict/targeted',
-	requireCollectionMember, contradictRateLimit, AI.scanTargeted);
+	requireCollectionMember, rejectDemoCollectionWrites, contradictRateLimit, AI.scanTargeted);
 
 router.post('/contradict/:collectionId',
-	requireCollectionMember, contradictRateLimit, AI.scanCollection);
+	requireCollectionMember, rejectDemoCollectionWrites, contradictRateLimit, AI.scanCollection);
 
 router.get('/contradictions/:collectionId',
 	requireCollectionMember, AI.listContradictions);

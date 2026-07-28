@@ -34,11 +34,13 @@ CREATE TABLE IF NOT EXISTS collections (
                        CONSTRAINT chk_collections_embedding_model
                        CHECK (embedding_model IN ('nomic-embed-text')),
   archived           BOOLEAN DEFAULT FALSE,
+  is_demo            BOOLEAN NOT NULL DEFAULT FALSE,
   created_at         TIMESTAMPTZ DEFAULT NOW(),
   updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
 ALTER TABLE collections ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE;
+ALTER TABLE collections ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE collections ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 DO $$
 BEGIN

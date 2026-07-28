@@ -12,6 +12,7 @@ export interface Collection {
 	name: string;
 	chunkingStrategy: string;
 	archived: boolean;
+	isDemo?: boolean;
 	documentCount: number;
 	createdAt: string;
 	accessRole?: 'owner' | 'editor' | 'viewer';

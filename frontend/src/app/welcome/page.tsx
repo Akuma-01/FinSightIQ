@@ -10,10 +10,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 export default function WelcomePage() {
-	const { token, user, loading: authLoading } = useAuth();
+	const { token, loading: authLoading } = useAuth();
 	const router = useRouter();
 	const [collections, setCollections] = useState<Collection[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [creatingDemo, setCreatingDemo] = useState(false);
+	const [demoError, setDemoError] = useState('');
 
 	useEffect(() => {
 		if (authLoading) return;
@@ -38,15 +40,28 @@ export default function WelcomePage() {
 	}, [authLoading, router, token]);
 
 	const walkthroughCollection = useMemo(
-		() => collections.find((collection) => collection.documentCount >= 2) ?? collections[0],
+		() => collections.find((collection) => collection.isDemo) ?? collections.find((collection) => collection.documentCount >= 2),
 		[collections]
 	);
-	const canCreate = user?.role === 'admin' || user?.role === 'analyst';
 
 	if (authLoading || loading) {
 		return <main className="flex min-h-screen items-center justify-center bg-slate-950"><Spinner className="text-blue-300" /></main>;
 	}
 	if (!token) return null;
+
+	async function startDemo() {
+		if (!token) return;
+		setDemoError('');
+		setCreatingDemo(true);
+		try {
+			const { collection } = await collectionsAPI.createDemo(token);
+			router.push(`/collections/${collection.id}?tour=1`);
+		} catch (err) {
+			setDemoError(err instanceof Error ? err.message : 'Could not prepare the sample workspace');
+		} finally {
+			setCreatingDemo(false);
+		}
+	}
 
 	return (
 		<AppShell title="See your next compliance risk" eyebrow="FinSightIQ overview" description="Start with the outcome: identify a conflict, verify the evidence, then decide what to do next.">
@@ -66,14 +81,15 @@ export default function WelcomePage() {
 				<div className="mt-7 flex flex-wrap gap-3">
 					{walkthroughCollection ? (
 						<Link href={`/collections/${walkthroughCollection.id}?tour=1`} className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400">Start the walkthrough</Link>
-					) : canCreate ? (
-						<Link href="/collections" className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400">Create a workspace</Link>
 					) : (
-						<Link href="/collections" className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400">View workspaces</Link>
+						<button type="button" onClick={startDemo} disabled={creatingDemo} className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400 disabled:opacity-50">
+							{creatingDemo ? 'Preparing your sample…' : 'Explore a sample risk'}
+						</button>
 					)}
 					<Link href="/collections" className="rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-bold text-white hover:bg-white/10">Go to workspaces</Link>
 				</div>
-				{!walkthroughCollection && <p className="mt-4 text-xs text-blue-100/80">Add at least two documents to a workspace to unlock the guided walkthrough.</p>}
+				{!walkthroughCollection && <p className="mt-4 text-xs text-blue-100/80">A read-only sample workspace will be created just for you. No upload or setup required.</p>}
+				{demoError && <p className="mt-3 text-sm text-red-200">{demoError}</p>}
 			</section>
 
 			<section className="mt-6 grid gap-4 md:grid-cols-2">

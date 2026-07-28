@@ -130,6 +130,11 @@ export default function CollectionsPage() {
 										Archived
 									</span>
 								)}
+								{collection.isDemo && (
+									<span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-200 ring-1 ring-blue-400/30">
+										Sample walkthrough
+									</span>
+								)}
 							</div>
 
 							<div className="mt-4">

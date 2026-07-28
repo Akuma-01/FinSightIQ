@@ -45,3 +45,27 @@ export async function requireCollectionMember(
 		next(err);
 	}
 }
+
+/** Demo workspaces are intentionally safe to explore but cannot be changed. */
+export async function rejectDemoCollectionWrites(
+	req: Request,
+	_res: Response,
+	next: NextFunction
+) {
+	const collectionIdParam = req.params.id ?? req.params.collectionId ?? req.body?.collectionId;
+	const parsedCollectionId = z.uuid().safeParse(collectionIdParam);
+	if (!parsedCollectionId.success) {
+		next(new AppError(400, 'Invalid collectionId'));
+		return;
+	}
+	try {
+		const { rows } = await db.query('SELECT is_demo FROM collections WHERE id = $1', [parsedCollectionId.data]);
+		if (rows[0]?.is_demo) {
+			next(new AppError(403, 'The sample workspace is read-only'));
+			return;
+		}
+		next();
+	} catch (err) {
+		next(err);
+	}
+}

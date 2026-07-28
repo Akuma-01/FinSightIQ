@@ -29,6 +29,8 @@ type RawCollection = {
 	chunking_strategy?: string;
 	chunkingStrategy?: string;
 	archived?: boolean;
+	is_demo?: boolean;
+	isDemo?: boolean;
 	document_count?: string | number;
 	documentCount?: string | number;
 	created_at?: string;
@@ -182,6 +184,7 @@ function normalizeCollection(collection: RawCollection): Collection {
 		name: collection.name,
 		chunkingStrategy: collection.chunkingStrategy ?? collection.chunking_strategy ?? 'sentence',
 		archived: Boolean(collection.archived),
+		isDemo: Boolean(collection.isDemo ?? collection.is_demo),
 		documentCount: Number(collection.documentCount ?? collection.document_count ?? 0),
 		createdAt: collection.createdAt ?? collection.created_at ?? '',
 		accessRole: collection.accessRole ?? collection.access_role,
@@ -373,6 +376,10 @@ export const collections = {
 	create: (token: string, data: { name: string; chunkingStrategy: string }) =>
 		request<{ collection: RawCollection }>
 			('/api/collections', { method: 'POST', token, body: JSON.stringify(data) })
+			.then((res) => ({ collection: normalizeCollection(res.collection) })),
+
+	createDemo: (token: string) =>
+		request<{ collection: RawCollection }>('/api/collections/demo', { method: 'POST', token })
 			.then((res) => ({ collection: normalizeCollection(res.collection) })),
 
 	get: (token: string, id: string) =>
