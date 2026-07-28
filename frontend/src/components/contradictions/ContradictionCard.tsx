@@ -2,6 +2,7 @@ import { cn } from '@/lib/cn';
 import { contradictionTypeLabel } from '@/lib/labels';
 import { theme } from '@/lib/theme';
 import type { Contradiction } from '@/types/api';
+import Link from 'next/link';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 
@@ -21,9 +22,10 @@ type Props = {
 	contradiction: Contradiction;
 	canResolve?: boolean;
 	onResolve?: (id: string) => Promise<void> | void;
+	collectionId?: string;
 };
 
-export function ContradictionCard({ contradiction, canResolve = false, onResolve }: Props) {
+export function ContradictionCard({ contradiction, canResolve = false, onResolve, collectionId }: Props) {
 	const [resolving, setResolving] = useState(false);
 	const [resolved, setResolved] = useState(contradiction.isResolved);
 
@@ -61,16 +63,17 @@ export function ContradictionCard({ contradiction, canResolve = false, onResolve
 
 			<div className="mt-4 grid gap-3 md:grid-cols-2">
 				<div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 shadow-sm shadow-slate-950/30">
-					<p className="truncate text-xs font-semibold text-slate-300">{contradiction.docAName}</p>
+					{collectionId ? <Link href={`/collections/${collectionId}/documents/${contradiction.docAId}`} className="block truncate text-xs font-semibold text-blue-200 hover:underline">{contradiction.docAName}</Link> : <p className="truncate text-xs font-semibold text-slate-300">{contradiction.docAName}</p>}
 					{contradiction.sectionA && <p className="mt-1 text-xs text-slate-500">§ {contradiction.sectionA}</p>}
 					<p className="mt-2 text-sm leading-6 text-slate-100">{contradiction.claimA}</p>
 				</div>
 				<div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 shadow-sm shadow-slate-950/30">
-					<p className="truncate text-xs font-semibold text-slate-300">{contradiction.docBName}</p>
+					{collectionId ? <Link href={`/collections/${collectionId}/documents/${contradiction.docBId}`} className="block truncate text-xs font-semibold text-blue-200 hover:underline">{contradiction.docBName}</Link> : <p className="truncate text-xs font-semibold text-slate-300">{contradiction.docBName}</p>}
 					{contradiction.sectionB && <p className="mt-1 text-xs text-slate-500">§ {contradiction.sectionB}</p>}
 					<p className="mt-2 text-sm leading-6 text-slate-100">{contradiction.claimB}</p>
 				</div>
 			</div>
+			{collectionId && <p className="mt-3 text-xs text-slate-400">Select either document name to inspect the original source.</p>}
 
 			<p className="mt-3 text-sm leading-6 text-slate-200">{contradiction.explanation}</p>
 

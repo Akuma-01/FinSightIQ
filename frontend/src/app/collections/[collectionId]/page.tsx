@@ -262,6 +262,14 @@ export default function CollectionDetailPage({
 					</section>
 				)}
 
+				{collection?.isDemo ? (
+					<section className="mt-6 rounded-3xl border border-blue-400/30 bg-blue-500/10 p-6">
+						<p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200">Read-only sample</p>
+						<h2 className="mt-2 text-lg font-bold text-white">A material regulatory change is ready to review.</h2>
+						<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">This sample contains a critical change in capital requirements. Open Risk review to see the two source statements, the explanation, and the potential compliance impact.</p>
+						<Link href={`/collections/${collectionId}/contradictions?tour=1`} className="mt-5 inline-flex rounded-full bg-blue-500 px-4 py-2 text-sm font-bold text-white hover:bg-blue-400">Open the sample risk</Link>
+					</section>
+				) : (
 				<div className="mt-6 grid gap-4 lg:grid-cols-2">
 					<section className="rounded-3xl border border-slate-700 bg-slate-900/85 p-6 shadow-lg shadow-slate-950/20">
 						<h2 className="text-base font-bold text-white">Ask about these documents</h2>
@@ -317,17 +325,18 @@ export default function CollectionDetailPage({
 						)}
 					</section>
 				</div>
+				)}
 
 				<details className="mt-6 overflow-hidden rounded-3xl border border-slate-700 bg-slate-900/85 shadow-lg shadow-slate-950/20">
 					<summary className="flex cursor-pointer items-center justify-between gap-4 px-4 py-4 text-sm font-bold text-white">
-						<span>Documents and workspace tools</span>
-						<span className="text-xs font-normal text-slate-400">{documents.length} documents · Manage uploads and comparisons</span>
+						<span>{collection?.isDemo ? 'Sample documents' : 'Documents and workspace tools'}</span>
+						<span className="text-xs font-normal text-slate-400">{documents.length} documents · {collection?.isDemo ? 'Read the source material' : 'Manage uploads and comparisons'}</span>
 					</summary>
 					<div className="border-t border-slate-700">
 						<div className="flex flex-wrap items-center gap-2 px-4 py-3">
 							{canUpload && <button type="button" onClick={() => setShowUpload(true)} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Add documents</button>}
 							{canUpload && <button type="button" onClick={() => setShowEdgar(true)} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Import SEC filing</button>}
-							<Link href={`/collections/${collectionId}/compare`} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Compare documents</Link>
+							{!collection?.isDemo && <Link href={`/collections/${collectionId}/compare`} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Compare documents</Link>}
 							{user?.role === 'admin' && <button type="button" onClick={() => setShowMembers(true)} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/15">Manage access</button>}
 						</div>
 

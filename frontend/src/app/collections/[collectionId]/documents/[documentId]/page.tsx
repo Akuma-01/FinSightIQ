@@ -169,20 +169,20 @@ export default function DocumentViewerPage({
 
 	const rawText = document?.rawText?.trim()
 		? document.rawText
-		: '(No extracted text available. If this document was ingested before the new viewer endpoint became active, restart the backend after the benchmark finishes.)';
+		: '(This document is not ready to display yet. Please try again shortly.)';
 
 	return (
 		<main className="flex h-screen overflow-hidden bg-slate-950">
 			<section className="flex min-w-0 flex-1 flex-col">
 				<header className="border-b border-slate-800 bg-slate-900/95 px-5 py-4 shadow-sm shadow-slate-950/30 backdrop-blur-xl">
-					<Link href={`/collections/${collectionId}`} className="text-xs font-bold text-blue-300 hover:underline">
-						← Back to collection
+					<Link href={`/collections/${collectionId}/contradictions`} className="text-xs font-bold text-blue-300 hover:underline">
+						← Back to risk review
 					</Link>
 					<div className="mt-2 flex flex-wrap items-center justify-between gap-3">
 						<div className="min-w-0">
 							<h1 className="truncate text-lg font-bold text-white">{document?.filename ?? 'Document'}</h1>
 							<p className="mt-1 text-xs text-slate-400">
-								{document?.source || 'manual'} · {document?.status} · WS {wsStatus}
+								{document?.source || 'Uploaded document'} · {document?.status === 'ready' ? 'Ready to review' : 'Preparing for review'}
 							</p>
 						</div>
 						<div className="flex flex-wrap gap-2">
@@ -192,7 +192,7 @@ export default function DocumentViewerPage({
 								disabled={summarizing || document?.status !== 'ready'}
 								className="rounded-full border border-blue-400/40 bg-blue-500/15 px-3 py-1 text-xs font-bold text-blue-200 hover:bg-blue-500/25 disabled:opacity-50"
 							>
-								{summarizing ? 'Summarizing…' : 'Summarize document'}
+								{summarizing ? 'Preparing…' : 'Create briefing'}
 							</button>
 							{activeUsers.length === 0 && (
 								<span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
@@ -215,9 +215,9 @@ export default function DocumentViewerPage({
 						<section className="border-b border-slate-800 bg-slate-900/90 px-5 py-4">
 							<div className="flex items-start justify-between gap-4">
 								<div>
-									<p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">AI document summary</p>
+									<p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Document briefing</p>
 									<p className="mt-1 text-xs text-slate-400">
-										Generated from this document&apos;s extracted text.
+										A concise overview based on this document.
 									</p>
 								</div>
 								{summary && (

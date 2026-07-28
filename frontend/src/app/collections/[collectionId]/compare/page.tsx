@@ -203,7 +203,7 @@ export default function ComparePage({
 
 					{results.length > 0 ? (
 						results.map((contradiction) => (
-							<ContradictionCard key={contradiction.id} contradiction={contradiction} />
+							<ContradictionCard key={contradiction.id} contradiction={contradiction} collectionId={collectionId} />
 						))
 					) : (
 						<EmptyState

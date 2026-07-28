@@ -8,8 +8,8 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
-import { ai } from '@/lib/api';
-import type { Contradiction, StaleReference } from '@/types/api';
+import { ai, collections as collectionsAPI } from '@/lib/api';
+import type { Collection, Contradiction, StaleReference } from '@/types/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -27,6 +27,7 @@ export default function ContradictionsPage({
 	const searchParams = useSearchParams();
 	const tourActive = searchParams.get('tour') === '1';
 	const [contradictions, setContradictions] = useState<Contradiction[]>([]);
+	const [collection, setCollection] = useState<Collection | null>(null);
 	const [staleRefs, setStaleRefs] = useState<StaleReference[]>([]);
 	const [severity, setSeverity] = useState<SeverityFilter>('all');
 	const [loading, setLoading] = useState(true);
@@ -42,11 +43,13 @@ export default function ContradictionsPage({
 
 		let cancelled = false;
 		Promise.all([
+			collectionsAPI.get(token, collectionId),
 			ai.contradictions(token, collectionId),
 			ai.stale(token, collectionId),
 		])
-			.then(([contradictionResult, staleResult]) => {
+			.then(([collectionResult, contradictionResult, staleResult]) => {
 				if (cancelled) return;
+				setCollection(collectionResult.collection);
 				setContradictions(contradictionResult.contradictions);
 				setStaleRefs(staleResult.staleReferences);
 			})
@@ -119,7 +122,7 @@ export default function ContradictionsPage({
 			backHref={`/collections/${collectionId}`}
 			backLabel="Back to collection"
 			maxWidth="max-w-7xl"
-			actions={(
+			actions={!collection?.isDemo && (
 				<button
 					type="button"
 					onClick={startScan}
@@ -141,7 +144,7 @@ export default function ContradictionsPage({
 				<section className="mt-6 rounded-3xl border border-blue-400/30 bg-blue-500/10 p-6">
 					<p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200">Steps 2–3 of 3 · Verify, then decide</p>
 					<h2 className="mt-2 text-lg font-bold text-white">Every risk is explained with its evidence.</h2>
-					<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Read the two source statements side by side, then decide whether the finding needs review. Authorised reviewers can mark it resolved once the team has acted.</p>
+					<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Read the two source statements side by side, then decide whether the finding needs review. Select either source name to read the original document.</p>
 				</section>
 			)}
 
@@ -188,8 +191,9 @@ export default function ContradictionsPage({
 							<ContradictionCard
 								key={contradiction.id}
 								contradiction={contradiction}
-								canResolve={canResolve}
+								canResolve={canResolve && !collection?.isDemo}
 								onResolve={resolveContradiction}
+								collectionId={collectionId}
 							/>
 						))
 					)}
