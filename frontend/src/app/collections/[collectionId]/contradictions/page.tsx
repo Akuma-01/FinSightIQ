@@ -11,6 +11,7 @@ import { useCollectionRoom } from '@/hooks/useCollectionRoom';
 import { ai, collections as collectionsAPI } from '@/lib/api';
 import type { Collection, Contradiction, StaleReference } from '@/types/api';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 
@@ -103,6 +104,7 @@ export default function ContradictionsPage({
 	const critical = contradictions.filter((item) => item.severity === 'critical').length;
 	const moderate = contradictions.filter((item) => item.severity === 'moderate').length;
 	const minor = contradictions.filter((item) => item.severity === 'minor').length;
+	const isDemo = Boolean(collection?.isDemo);
 
 	if (authLoading || loading) {
 		return (
@@ -148,33 +150,37 @@ export default function ContradictionsPage({
 				</section>
 			)}
 
-			<div className="mt-8 grid gap-4 md:grid-cols-4">
-				<MetricCard label="Critical" value={critical} tone="red" />
-				<MetricCard label="Moderate" value={moderate} tone="amber" />
-				<MetricCard label="Minor" value={minor} tone="blue" />
-				<MetricCard label="Unresolved" value={unresolved} tone="slate" />
-			</div>
+			{!isDemo && (
+				<>
+					<div className="mt-8 grid gap-4 md:grid-cols-4">
+						<MetricCard label="Critical" value={critical} tone="red" />
+						<MetricCard label="Moderate" value={moderate} tone="amber" />
+						<MetricCard label="Minor" value={minor} tone="blue" />
+						<MetricCard label="Unresolved" value={unresolved} tone="slate" />
+					</div>
 
-			<div className="mt-6 flex flex-wrap gap-2">
-				{(['all', 'critical', 'moderate', 'minor'] as const).map((option) => (
-					<button
-						key={option}
-						type="button"
-						onClick={() => setSeverity(option)}
-						className={severity === option
-							? 'rounded-full bg-gray-900 px-3 py-1 text-xs font-semibold text-white'
-							: 'rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 ring-1 ring-slate-700 hover:bg-slate-700'}
-					>
-						{option}
-					</button>
-				))}
-			</div>
+					<div className="mt-6 flex flex-wrap gap-2">
+						{(['all', 'critical', 'moderate', 'minor'] as const).map((option) => (
+							<button
+								key={option}
+								type="button"
+								onClick={() => setSeverity(option)}
+								className={severity === option
+									? 'rounded-full bg-gray-900 px-3 py-1 text-xs font-semibold text-white'
+									: 'rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-200 ring-1 ring-slate-700 hover:bg-slate-700'}
+							>
+								{option}
+							</button>
+						))}
+					</div>
+				</>
+			)}
 
-			<div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+			<div className={`mt-6 grid gap-6 ${isDemo ? 'max-w-4xl' : 'lg:grid-cols-[1fr_360px]'}`}>
 				<section className="space-y-3">
 					<div className="flex items-center justify-between">
 						<h2 className="text-sm font-bold text-white">Findings</h2>
-						{wsStatus === 'connected' && (
+						{!isDemo && wsStatus === 'connected' && (
 							<span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-300">
 								<span className="relative flex h-2 w-2">
 									<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -199,7 +205,7 @@ export default function ContradictionsPage({
 					)}
 				</section>
 
-				<aside>
+				{!isDemo && <aside>
 					<div className="rounded-3xl border border-slate-700 bg-slate-900/85 p-5 shadow-lg shadow-slate-950/20">
 						<h2 className="mb-3 text-sm font-bold text-white">References that may need updating</h2>
 						<StaleReferenceList
@@ -209,8 +215,20 @@ export default function ContradictionsPage({
 							onResolved={(id) => setStaleRefs((current) => current.map((ref) => ref.id === id ? { ...ref, isResolved: true } : ref))}
 						/>
 					</div>
-				</aside>
+				</aside>}
 			</div>
+
+			{isDemo && (
+				<section className="mt-6 max-w-4xl rounded-3xl border border-emerald-400/30 bg-emerald-500/10 p-6">
+					<p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-200">Walkthrough complete</p>
+					<h2 className="mt-2 text-lg font-bold text-white">You saw the complete decision path.</h2>
+					<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">FinSightIQ surfaced a material change, showed the two underlying statements, and made the compliance impact understandable without asking you to inspect the technical process.</p>
+					<div className="mt-5 flex flex-wrap gap-3">
+						<Link href="/collections" className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">View your workspaces</Link>
+						<Link href="/welcome" className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Restart overview</Link>
+					</div>
+				</section>
+			)}
 		</AppShell>
 	);
 }
