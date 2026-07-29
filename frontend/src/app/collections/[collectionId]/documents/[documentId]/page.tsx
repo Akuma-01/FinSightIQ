@@ -6,9 +6,10 @@ import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
 import { ai, annotations as annotationsAPI, documents as documentsAPI } from '@/lib/api';
 import type { Annotation, Document } from '@/types/api';
+import type { OnMount } from '@monaco-editor/react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
@@ -30,6 +31,8 @@ export default function DocumentViewerPage({
 	const { collectionId, documentId } = use(params);
 	const { token, user, loading: authLoading } = useAuth();
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const highlight = searchParams.get('highlight')?.trim() ?? '';
 	const [document, setDocument] = useState<Document | null>(null);
 	const [annotations, setAnnotations] = useState<Annotation[]>([]);
 	const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
@@ -171,6 +174,23 @@ export default function DocumentViewerPage({
 		? document.rawText
 		: '(This document is not ready to display yet. Please try again shortly.)';
 
+	const handleEditorMount: OnMount = (editor) => {
+		if (!highlight) return;
+		const model = editor.getModel();
+		const match = model?.findMatches(highlight, false, false, false, null, true)[0]
+			?? model?.findMatches(highlight.split(',')[0].trim(), false, false, false, null, true)[0];
+		if (!match) return;
+		editor.setSelection(match.range);
+		editor.revealRangeInCenter(match.range);
+		editor.deltaDecorations([], [{
+			range: match.range,
+			options: {
+				inlineClassName: 'evidence-highlight',
+				inlineClassNameAffectsLetterSpacing: true,
+			},
+		}]);
+	};
+
 	return (
 		<main className="flex h-screen overflow-hidden bg-slate-950">
 			<section className="flex min-w-0 flex-1 flex-col">
@@ -250,6 +270,7 @@ export default function DocumentViewerPage({
 						height="100%"
 						language="plaintext"
 						value={rawText}
+						onMount={handleEditorMount}
 						options={{
 							readOnly: true,
 							wordWrap: 'on',

@@ -98,7 +98,7 @@ export async function createDemoCollection(createdBy: string) {
 			client.query(
 				`INSERT INTO documents (collection_id, uploaded_by, filename, original_name, mime_type, size_bytes, doc_type, source, effective_date, raw_text, status)
 				 VALUES ($1, $2, 'Capital Requirements Update — November 2024.pdf', 'Capital Requirements Update — November 2024.pdf', 'application/pdf', 197632, 'regulatory_circular', 'Sample RBI circular', '2024-11-01', $3, 'ready') RETURNING id`,
-				[collection.id, createdBy, 'Minimum capital adequacy ratio: 11%. This update applies to all scheduled commercial banks from 1 January 2025.']
+				[collection.id, createdBy, 'Minimum capital adequacy ratio: 11%, effective 1 January 2025. This update applies to all scheduled commercial banks.']
 			),
 		]);
 		const docA = firstDocument.rows[0].id;
