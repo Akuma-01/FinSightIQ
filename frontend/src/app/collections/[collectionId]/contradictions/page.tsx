@@ -8,7 +8,7 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
 import { useCollectionRoom } from '@/hooks/useCollectionRoom';
-import { ai, collections as collectionsAPI } from '@/lib/api';
+import { ai, collections as collectionsAPI, onboarding } from '@/lib/api';
 import type { Collection, Contradiction, StaleReference } from '@/types/api';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -106,6 +106,10 @@ export default function ContradictionsPage({
 	const minor = contradictions.filter((item) => item.severity === 'minor').length;
 	const isDemo = Boolean(collection?.isDemo);
 
+	useEffect(() => {
+		if (token && isDemo) void onboarding.track(token, { collectionId, eventType: 'risk_viewed' });
+	}, [collectionId, isDemo, token]);
+
 	if (authLoading || loading) {
 		return (
 			<main className="flex min-h-screen items-center justify-center bg-slate-950">
@@ -200,6 +204,7 @@ export default function ContradictionsPage({
 								canResolve={canResolve && !collection?.isDemo}
 								onResolve={resolveContradiction}
 								collectionId={collectionId}
+								onEvidenceOpened={isDemo && token ? () => { void onboarding.track(token, { collectionId, eventType: 'evidence_opened' }); } : undefined}
 							/>
 						))
 					)}
@@ -224,7 +229,7 @@ export default function ContradictionsPage({
 					<h2 className="mt-2 text-lg font-bold text-white">You saw the complete decision path.</h2>
 					<p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">FinSightIQ surfaced a material change, showed the two underlying statements, and made the compliance impact understandable without asking you to inspect the technical process.</p>
 					<div className="mt-5 flex flex-wrap gap-3">
-						<Link href="/collections" className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">View your workspaces</Link>
+						<Link href="/collections" onClick={() => { if (token) void onboarding.track(token, { collectionId, eventType: 'walkthrough_completed' }); }} className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500">View your workspaces</Link>
 						<Link href="/welcome" className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-bold text-white hover:bg-white/10">Restart overview</Link>
 					</div>
 				</section>

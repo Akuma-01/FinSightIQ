@@ -3,7 +3,7 @@
 import { AppShell } from '@/components/layout/AppShell';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
-import { health, users as usersAPI, type AdminUser } from '@/lib/api';
+import { health, onboarding, users as usersAPI, type AdminUser } from '@/lib/api';
 import { roleLabel } from '@/lib/labels';
 import type { HealthStatus, Role } from '@/types/api';
 import { useRouter } from 'next/navigation';
@@ -31,6 +31,7 @@ export default function AdminPage() {
 	const [teamLoading, setTeamLoading] = useState(true);
 	const [teamError, setTeamError] = useState('');
 	const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+	const [onboardingMetrics, setOnboardingMetrics] = useState<{ walkthroughStarted: number; riskViewed: number; evidenceOpened: number; walkthroughCompleted: number } | null>(null);
 	const isRestricted = !authLoading && Boolean(token) && user?.role !== 'admin';
 
 	async function refreshHealth() {
@@ -58,6 +59,15 @@ export default function AdminPage() {
 			setTeamError(err instanceof Error ? err.message : 'Could not load team');
 		} finally {
 			setTeamLoading(false);
+		}
+	}
+
+	async function loadOnboardingMetrics() {
+		if (!token) return;
+		try {
+			setOnboardingMetrics(await onboarding.metrics(token));
+		} catch {
+			// Product analytics must not prevent core administration from loading.
 		}
 	}
 
@@ -97,6 +107,7 @@ export default function AdminPage() {
 
 		void poll();
 		void loadTeamOnce();
+		void loadOnboardingMetrics();
 		const interval = setInterval(poll, 10_000);
 		return () => {
 			cancelled = true;
@@ -132,6 +143,12 @@ export default function AdminPage() {
 		['Scan worker', data?.scan_worker],
 		['Benchmark worker', data?.benchmark_worker],
 		['WebSocket clients', data?.ws_connections ?? 0],
+	] as const;
+	const funnelCards = [
+		['Walkthroughs started', onboardingMetrics?.walkthroughStarted ?? 0],
+		['Risks viewed', onboardingMetrics?.riskViewed ?? 0],
+		['Evidence opened', onboardingMetrics?.evidenceOpened ?? 0],
+		['Walkthroughs completed', onboardingMetrics?.walkthroughCompleted ?? 0],
 	] as const;
 
 	return (
@@ -172,6 +189,19 @@ export default function AdminPage() {
 						<p className="mt-2 text-xl font-semibold">{String(value ?? 'unknown')}</p>
 					</div>
 				))}
+			</div>
+
+			<div className="mt-10">
+				<h2 className="text-sm font-bold text-white">First-time experience</h2>
+				<p className="mt-1 text-sm text-slate-400">A privacy-conscious funnel for the sample walkthrough. It records fixed product events, never document content.</p>
+				<div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					{funnelCards.map(([label, value]) => (
+						<div key={label} className="rounded-3xl border border-blue-500/25 bg-blue-500/10 p-5 shadow-sm">
+							<p className="text-xs font-medium uppercase tracking-wide text-blue-200/80">{label}</p>
+							<p className="mt-2 text-xl font-semibold text-white">{value}</p>
+						</div>
+					))}
+				</div>
 			</div>
 
 			<div className="mt-10">

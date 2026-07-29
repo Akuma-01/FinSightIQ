@@ -3,7 +3,7 @@
 import { AppShell } from '@/components/layout/AppShell';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/context/AuthContext';
-import { collections as collectionsAPI } from '@/lib/api';
+import { collections as collectionsAPI, onboarding } from '@/lib/api';
 import type { Collection } from '@/types/api';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -55,6 +55,7 @@ export default function WelcomePage() {
 		setCreatingDemo(true);
 		try {
 			const { collection } = await collectionsAPI.createDemo(token);
+			void onboarding.track(token, { collectionId: collection.id, eventType: 'walkthrough_started' });
 			router.push(`/collections/${collection.id}?tour=1`);
 		} catch (err) {
 			setDemoError(err instanceof Error ? err.message : 'Could not prepare the sample workspace');
@@ -80,7 +81,7 @@ export default function WelcomePage() {
 				</div>
 				<div className="mt-7 flex flex-wrap gap-3">
 					{walkthroughCollection ? (
-						<Link href={`/collections/${walkthroughCollection.id}?tour=1`} className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400">Start the walkthrough</Link>
+						<Link href={`/collections/${walkthroughCollection.id}?tour=1`} onClick={() => { void onboarding.track(token, { collectionId: walkthroughCollection.id, eventType: 'walkthrough_started' }); }} className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400">Start the walkthrough</Link>
 					) : (
 						<button type="button" onClick={startDemo} disabled={creatingDemo} className="rounded-full bg-blue-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-950/30 hover:bg-blue-400 disabled:opacity-50">
 							{creatingDemo ? 'Preparing your sample…' : 'Explore a sample risk'}

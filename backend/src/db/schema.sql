@@ -203,6 +203,20 @@ CREATE TABLE IF NOT EXISTS collection_members (
 CREATE INDEX IF NOT EXISTS idx_collection_members_collection ON collection_members(collection_id);
 CREATE INDEX IF NOT EXISTS idx_collection_members_user       ON collection_members(user_id);
 
+-- Product onboarding funnel. Stores only fixed event names, never document content.
+CREATE TABLE IF NOT EXISTS onboarding_events (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  collection_id UUID NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  event_type    TEXT NOT NULL CHECK (event_type IN
+                  ('walkthrough_started', 'risk_viewed', 'evidence_opened', 'walkthrough_completed')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, collection_id, event_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_events_type_created
+  ON onboarding_events(event_type, created_at DESC);
+
 -- Contradictions
 CREATE TABLE IF NOT EXISTS contradictions (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

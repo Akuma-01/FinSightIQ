@@ -24,6 +24,7 @@ import documentsRoutes from './routes/documents.routes';
 import edgarRoutes from './routes/edgar.routes';
 import healthRoutes from './routes/health.routes';
 import llmRoutes from './routes/llm.routes';
+import onboardingRoutes from './routes/onboarding.routes';
 import researchRoutes from './routes/research.routes';
 import testRoutes from './routes/test.routes';
 import usersRoutes from './routes/users.routes';
@@ -113,6 +114,7 @@ async function bootstrap() {
 
 	app.use('/llm', llmRoutes);
 	app.use('/api/research', researchRoutes);
+	app.use('/api/onboarding', onboardingRoutes);
 
 	// ── 404 + Error handlers (must be LAST) ───────────────────────
 	app.use(notFound);

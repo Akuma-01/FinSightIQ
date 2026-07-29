@@ -313,6 +313,7 @@ async function request<T>(
 		const body = await res.json().catch(() => ({ error: 'Unknown error' }));
 		throw new APIError(res.status, body.error ?? `HTTP ${res.status}`);
 	}
+	if (res.status === 204) return undefined as T;
 
 	return res.json() as T;
 }
@@ -477,6 +478,14 @@ export const ai = {
 	summarizeCollection: (token: string, collectionId: string) =>
 		request<{ summary: string; documentCount?: number; tokensUsed?: unknown }>
 			(`/api/ai/summarize/collection/${collectionId}`, { method: 'POST', token }),
+};
+
+export const onboarding = {
+	track: (token: string, data: { collectionId: string; eventType: 'walkthrough_started' | 'risk_viewed' | 'evidence_opened' | 'walkthrough_completed' }) =>
+		request<void>('/api/onboarding/events', { method: 'POST', token, body: JSON.stringify(data) }),
+
+	metrics: (token: string) =>
+		request<{ walkthroughStarted: number; riskViewed: number; evidenceOpened: number; walkthroughCompleted: number }>('/api/onboarding/metrics', { token }),
 };
 
 // ─── EDGAR ────────────────────────────────────────────────────────────────────

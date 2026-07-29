@@ -23,9 +23,10 @@ type Props = {
 	canResolve?: boolean;
 	onResolve?: (id: string) => Promise<void> | void;
 	collectionId?: string;
+	onEvidenceOpened?: () => void;
 };
 
-export function ContradictionCard({ contradiction, canResolve = false, onResolve, collectionId }: Props) {
+export function ContradictionCard({ contradiction, canResolve = false, onResolve, collectionId, onEvidenceOpened }: Props) {
 	const [resolving, setResolving] = useState(false);
 	const [resolved, setResolved] = useState(contradiction.isResolved);
 
@@ -68,12 +69,12 @@ export function ContradictionCard({ contradiction, canResolve = false, onResolve
 
 			<div className="mt-4 grid gap-3 md:grid-cols-2">
 				<div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 shadow-sm shadow-slate-950/30">
-					{collectionId ? <Link href={sourceHref(contradiction.docAId, contradiction.claimA)} className="block truncate text-xs font-semibold text-blue-200 hover:underline">{contradiction.docAName}</Link> : <p className="truncate text-xs font-semibold text-slate-300">{contradiction.docAName}</p>}
+					{collectionId ? <Link href={sourceHref(contradiction.docAId, contradiction.claimA)} onClick={onEvidenceOpened} className="block truncate text-xs font-semibold text-blue-200 hover:underline">{contradiction.docAName}</Link> : <p className="truncate text-xs font-semibold text-slate-300">{contradiction.docAName}</p>}
 					{contradiction.sectionA && <p className="mt-1 text-xs text-slate-500">§ {contradiction.sectionA}</p>}
 					<p className="mt-2 text-sm leading-6 text-slate-100">{contradiction.claimA}</p>
 				</div>
 				<div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 shadow-sm shadow-slate-950/30">
-					{collectionId ? <Link href={sourceHref(contradiction.docBId, contradiction.claimB)} className="block truncate text-xs font-semibold text-blue-200 hover:underline">{contradiction.docBName}</Link> : <p className="truncate text-xs font-semibold text-slate-300">{contradiction.docBName}</p>}
+					{collectionId ? <Link href={sourceHref(contradiction.docBId, contradiction.claimB)} onClick={onEvidenceOpened} className="block truncate text-xs font-semibold text-blue-200 hover:underline">{contradiction.docBName}</Link> : <p className="truncate text-xs font-semibold text-slate-300">{contradiction.docBName}</p>}
 					{contradiction.sectionB && <p className="mt-1 text-xs text-slate-500">§ {contradiction.sectionB}</p>}
 					<p className="mt-2 text-sm leading-6 text-slate-100">{contradiction.claimB}</p>
 				</div>
