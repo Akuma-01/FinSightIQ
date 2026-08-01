@@ -121,12 +121,12 @@ export async function getDocumentInCollection(documentId: string, collectionId: 
 	return rows[0];
 }
 
-export async function deleteDocument(documentId: string) {
+export async function deleteDocument(documentId: string, collectionId: string) {
 	const { rows } = await db.query(
-		'DELETE FROM documents WHERE id = $1 RETURNING storage_key',
-		[documentId]
+		'DELETE FROM documents WHERE id = $1 AND collection_id = $2 RETURNING storage_key',
+		[documentId, collectionId]
 	);
-	if (!rows[0]) throw new AppError(404, 'Document not found');
+	if (!rows[0]) throw new AppError(404, 'Document not found in this collection');
 	deleteFile(rows[0].storage_key);
 }
 

@@ -46,8 +46,9 @@ export const uploadOne = [
 ];
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
+	const collectionId = getUuidParam(req, 'collectionId');
 	const documentId = getUuidParam(req, 'documentId');
-	await DocumentsService.deleteDocument(documentId);
+	await DocumentsService.deleteDocument(documentId, collectionId);
 	res.json({ message: 'Document deleted' });
 });
 

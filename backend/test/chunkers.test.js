@@ -27,6 +27,15 @@ test('sentence chunker preserves content and labels its strategy', () => {
   assert.ok(chunks.every((result) => result.chunkingStrategy === 'sentence'));
 });
 
+test('sentence chunker splits oversized punctuation-free filing text', () => {
+	const text = Array.from({ length: 2_000 }, () => 'table-value').join(' ');
+	const chunks = chunk(text, 'sentence', 'test-document');
+
+	assert.ok(chunks.length > 1);
+	assert.ok(chunks.every((result) => result.tokenCount <= 400));
+	assert.equal(chunks.map((result) => result.text).join(' '), text);
+});
+
 test('section-aware chunker uses headings when enough sections exist', () => {
   const text = [
     'SECTION 1 CAPITAL',

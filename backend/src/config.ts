@@ -46,7 +46,9 @@ const EnvSchema = z.object({
 	GROQ_MODEL_MID: z.string().default('mixtral-8x7b-32768'),
 	GROQ_MODEL_FAST: z.string().default('llama-3.1-8b-instant'),
 	EMBEDDING_PROVIDER: z.enum(['groq', 'huggingface', 'ollama']).default('ollama'),
-	LLM_PROVIDER: z.enum(['groq', 'ollama']).default('groq'),
+	// Local Ollama is the out-of-the-box setup. Groq remains available when a
+	// project explicitly opts in and supplies its API key.
+	LLM_PROVIDER: z.enum(['groq', 'ollama']).default('ollama'),
 	OLLAMA_BASE_URL: z.url().default('http://localhost:11434'),
 	OLLAMA_MODEL_HEAVY: z.string().default('llama3.2:3b'),
 	OLLAMA_MODEL_MID: z.string().default('llama3.2:3b'),
@@ -94,3 +96,8 @@ if (!parsed.success) {
 }
 
 export const config = parsed.data;
+
+if (config.LLM_PROVIDER === 'groq' && !config.GROQ_API_KEY?.trim()) {
+	logger.error('GROQ_API_KEY is required when LLM_PROVIDER=groq');
+	process.exit(1);
+}

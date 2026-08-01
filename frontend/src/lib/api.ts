@@ -440,6 +440,12 @@ export const documents = {
 	retry: (token: string, documentId: string) =>
 		request<{ documentId: string; jobId: string; status: string }>
 			(`/api/documents/${documentId}/retry`, { method: 'POST', token }),
+
+	remove: (token: string, collectionId: string, documentId: string) =>
+		request<{ message: string }>(
+			`/api/collections/${collectionId}/documents/${documentId}`,
+			{ method: 'DELETE', token }
+		),
 };
 
 // ─── AI ───────────────────────────────────────────────────────────────────────

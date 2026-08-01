@@ -24,7 +24,7 @@ async function main() {
 
 	for (const ticker of tickers) {
 		for (const filingType of ['10-K', '10-Q'] as const) {
-			const cacheKey = `edgar:${ticker}:${filingType}:${YEAR}`;
+			const cacheKey = `edgar:v2:${ticker}:${filingType}:${YEAR}`;
 
 			if (DRY_RUN) {
 				logger.info({ ticker, filingType, year: YEAR }, '[DRY RUN] would enqueue');

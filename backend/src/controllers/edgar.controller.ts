@@ -21,7 +21,8 @@ export const fetchFiling = [
 		if (!parsed.success) throw new AppError(400, parsed.error.message);
 
 		const { ticker, filingType, year, collectionId } = parsed.data;
-		const cacheKey = `edgar:${ticker}:${filingType}:${year}`;
+		// Versioned so documents fetched by the pre-primaryDocument importer are never reused.
+		const cacheKey = `edgar:v2:${ticker}:${filingType}:${year}`;
 
 		const job = await edgarQueue.add('fetch-edgar', {
 			ticker,

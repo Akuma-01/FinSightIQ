@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Job, Worker } from 'bullmq';
 import { config } from '../config';
 import { db } from '../db/pool';
+import { assertFilingHtml, buildPrimaryDocumentUrl } from '../lib/edgar-filing';
 import { logger } from '../lib/logger';
 import { EdgarJobData } from '../queue/edgar.queue';
 import { ingestQueue } from '../queue/ingest.queue';
@@ -72,7 +73,7 @@ async function getFilingAccession(
 	cik: string,
 	filingType: string,
 	year: number
-): Promise<{ accessionNumber: string; filingDate: string } | null> {
+): Promise<{ accessionNumber: string; filingDate: string; primaryDocument: string } | null> {
 	const url = assertEdgarUrl(`https://data.sec.gov/submissions/CIK${cik}.json`, EDGAR_DATA_HOSTNAME);
 	const { data } = await axios.get(
 		url,
@@ -87,45 +88,30 @@ async function getFilingAccession(
 			filings.form[i] === filingType &&
 			filings.filingDate[i].startsWith(String(year))
 		) {
+			const primaryDocument = filings.primaryDocument?.[i];
+			if (typeof primaryDocument !== 'string' || !primaryDocument.trim()) {
+				throw new Error(`EDGAR did not provide a primary document for ${filingType} ${filings.accessionNumber[i]}`);
+			}
 			return {
 				accessionNumber: filings.accessionNumber[i],
 				filingDate: filings.filingDate[i],
+				primaryDocument,
 			};
 		}
 	}
 	return null;
 }
 
-/** Download the primary document text from a filing */
-async function downloadFilingText(cik: string, accessionNumber: string): Promise<string> {
-	const accDashed = accessionNumber.replace(/-/g, '');
-	const cikNum = parseInt(cik, 10);
-	const indexUrl = assertEdgarUrl(
-		`https://www.sec.gov/Archives/edgar/data/${cikNum}/${accDashed}/${accessionNumber}-index.htm`,
-		EDGAR_WWW_HOSTNAME
-	);
-
-	// Fetch the index to find the primary document filename
-	const { data: indexHtml } = await axios.get(indexUrl, {
-		headers: { ...EDGAR_HEADERS, Accept: 'text/html' },
-		timeout: 20_000,
-	});
-
-	// Look for the primary document (first .htm file linked)
-	const primaryMatch = indexHtml.match(/href="([^"]+\.htm)"/i);
-	if (!primaryMatch) throw new Error('Could not find primary document in filing index');
-
-	const href = primaryMatch[1];
-	const primaryUrl = assertEdgarUrl(
-		href.startsWith('/')
-			? `https://www.sec.gov${href}`
-			: `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accDashed}/${href}`,
-		EDGAR_WWW_HOSTNAME
-	);
-	const { data: htmlText } = await axios.get(primaryUrl, {
-		headers: { ...EDGAR_HEADERS, Accept: 'text/html' },
+/** Download the SEC-designated primary document without following redirects. */
+async function downloadFilingText(cik: string, accessionNumber: string, primaryDocument: string): Promise<string> {
+	const primaryUrl = buildPrimaryDocumentUrl(cik, accessionNumber, primaryDocument);
+	const { data: htmlText } = await axios.get<string>(primaryUrl, {
+		headers: { ...EDGAR_HEADERS, Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8' },
 		timeout: 30_000,
+		maxRedirects: 0,
+		validateStatus: (status) => status >= 200 && status < 300,
 	});
+	assertFilingHtml(htmlText);
 
 	// Strip HTML tags for plain text extraction
 	return htmlText
@@ -154,7 +140,7 @@ async function processEdgarJob(job: Job<EdgarJobData>): Promise<void> {
 	const filing = await getFilingAccession(cik, filingType, year);
 	if (!filing) throw new Error(`No ${filingType} filing found for ${ticker} in ${year}`);
 
-	const text = await downloadFilingText(cik, filing.accessionNumber);
+	const text = await downloadFilingText(cik, filing.accessionNumber, filing.primaryDocument);
 	const filename = `${ticker}_${filingType}_${year}.txt`;
 	const uploadedBy = requestedBy === 'seed-script' ? null : requestedBy;
 

@@ -40,6 +40,8 @@ export default function CollectionDetailPage({
 	const [collectionSummary, setCollectionSummary] = useState('');
 	const [summarizing, setSummarizing] = useState(false);
 	const [retryingId, setRetryingId] = useState<string | null>(null);
+	const [documentPendingDeletion, setDocumentPendingDeletion] = useState<Document | null>(null);
+	const [documentDeleteLoading, setDocumentDeleteLoading] = useState(false);
 	const [archiveLoading, setArchiveLoading] = useState(false);
 	const [deleteLoading, setDeleteLoading] = useState(false);
 	const [deleteConfirmation, setDeleteConfirmation] = useState('');
@@ -197,6 +199,21 @@ export default function CollectionDetailPage({
 			toast.error(err instanceof Error ? err.message : 'Could not retry document');
 		} finally {
 			setRetryingId(null);
+		}
+	}
+
+	async function deleteDocument() {
+		if (!token || !documentPendingDeletion) return;
+		setDocumentDeleteLoading(true);
+		try {
+			await documentsAPI.remove(token, collectionId, documentPendingDeletion.id);
+			setDocuments((current) => current.filter((document) => document.id !== documentPendingDeletion.id));
+			toast.success(`Deleted ${documentPendingDeletion.filename}`);
+			setDocumentPendingDeletion(null);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Could not delete document');
+		} finally {
+			setDocumentDeleteLoading(false);
 		}
 	}
 
@@ -375,6 +392,15 @@ export default function CollectionDetailPage({
 											</button>
 										)}
 										<DocumentStatusBadge status={doc.status} />
+										{isAdmin && !collection?.isDemo && (
+											<button
+												type="button"
+												onClick={() => setDocumentPendingDeletion(doc)}
+												className="rounded-lg border border-red-400/40 px-3 py-1 text-xs font-semibold text-red-200 hover:bg-red-500/15"
+											>
+												Delete
+											</button>
+										)}
 									</div>
 								</li>
 							))}
@@ -469,6 +495,21 @@ export default function CollectionDetailPage({
 					collectionId={collectionId}
 					onClose={() => setShowMembers(false)}
 				/>
+			)}
+			{documentPendingDeletion && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
+					<section role="dialog" aria-modal="true" aria-labelledby="delete-document-title" className="w-full max-w-md rounded-3xl border border-red-500/30 bg-slate-900 p-6 shadow-2xl">
+						<p className="text-xs font-bold uppercase tracking-[0.2em] text-red-300">Delete document</p>
+						<h2 id="delete-document-title" className="mt-2 text-lg font-bold text-white">Remove this document?</h2>
+						<p className="mt-3 text-sm leading-6 text-slate-300">
+							<strong className="text-slate-100">{documentPendingDeletion.filename}</strong> and its extracted text, findings, annotations, and stored file will be permanently removed.
+						</p>
+						<div className="mt-6 flex justify-end gap-3">
+							<button type="button" onClick={() => setDocumentPendingDeletion(null)} disabled={documentDeleteLoading} className="rounded-full px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 disabled:opacity-50">Cancel</button>
+							<button type="button" onClick={deleteDocument} disabled={documentDeleteLoading} className="rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-50">{documentDeleteLoading ? 'Deleting…' : 'Delete permanently'}</button>
+						</div>
+					</section>
+				</div>
 			)}
 		</AppShell>
 	);
